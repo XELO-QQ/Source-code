@@ -1,4 +1,7 @@
-
+--!native
+--!optimize 2
+--!divine-intellect
+-- https://discord.gg/F9pywQsePr
 
 local function string_find(s, pattern)
 	return string.find(s, pattern, nil, true)
@@ -2266,7 +2269,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 	local currentstr, currentsize, totalsize, chunks = "", 0, 0, table.create(1)
 	local savebuffer, savebuffer_size = {}, 1
 	local header =
-		'<!-- Saved by UniversalSynSaveInstance (Join to Copy Games) https://discord.gg/wx4ThpAsmw --><roblox version="4">'
+		'<!-- Saved by XELO (Join to Copy Games) https://discord.gg/F9pywQsePr --><roblox version="4">'
 
 	local StatusText
 
@@ -2309,7 +2312,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		ShutdownWhenDone = false,
 		AntiIdle = true,
 		Anonymous = false,
-		ReadMe = false,
+		ReadMe = true,
 		FilePath = false,
 		AvoidFileOverwrite = true,
 		Object = false,
@@ -3518,7 +3521,8 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 											end
 										end
 
-										value value = value
+										value = "-- Saved by UniversalSynSaveInstance (Join to Copy Games) https://discord.gg/wx4ThpAsmw\n\n"
+											.. (hasLinkedSource and "-- Original Source: https://assetdelivery.roblox.com/v1/asset/?" .. (LinkedSource_type or "id") .. "=" .. (LinkedSource or LinkedSource_Url) .. "\n\n" or "")
 											.. value
 									end
 								end
