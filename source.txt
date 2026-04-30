@@ -2288,7 +2288,10 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 	-- end
 
 	local totalsize, chunks = 0, table.create(1)
-	local savebuffer, savebuffer_size = {}, 1local header = '<roblox version="4">'
+	local savebuffer, savebuffer_size = {}, 1
+	local header =
+		'<!-- Saved by UniversalSynSaveInstance (Join to Copy Games) https://discord.gg/wx4ThpAsmw --><roblox version="4">'
+
 	local StatusText
 
 	local OPTIONS = {
@@ -3030,11 +3033,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 					result = string.gsub(result, "\0", "\\0") -- ? Some decompilers sadly output \0 which prevents files from opening
 					output = result
 				else
-					output = "-- Failed to decompile script\n\n"
-      .. "-- THE GAME WAS STEALED BY XELO\n"
-      .. "-- JOIN THE DISCORD SERVER TO COPY ROBLOX GAMES\n"
-      .. "-- https://discord.gg/F9pywQsePr\n\n"
-      .. "-- Reason: " .. (result or "Unknown error")
+					output = "--[[ Failed to decompile. Reason:\n" .. (result or "") .. "\n]]"
 				end
 
 				if ScriptCache and bytecode then -- TODO there might(?) be an edgecase where it manages to decompile (built-in) even though getscriptbytecode failed, and the output won't get cached
@@ -3533,7 +3532,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 										if DecompileIgnoring == 1 then
 											DecompileIgnoring = nil
 										end
-										value = "-- Ignored\n\n-- THE GAME WAS STEALED BY XELO\n-- JOIN THE DISCORD SERVER TO COPY ROBLOX GAMES\n-- https://discord.gg/F9pywQsePr"
+										value = "-- Ignored"
 									else
 										local should_decompile = true
 										local LinkedSource
@@ -3615,17 +3614,10 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 												end
 											end
 										end
-value = "-- THE GAME WAS STEALED BY XELO\n"
-     .. "-- JOIN THE DISCORD SERVER TO COPY ROBLOX GAMES\n"
-     .. "-- https://discord.gg/F9pywQsePr\n\n"
-     .. (hasLinkedSource and "-- Original Source: https://assetdelivery.roblox.com/v1/asset/?" .. (LinkedSource_type or "id") .. "=" .. (LinkedSource or LinkedSource_Url) .. "\n\n" or "")
-     .. value"
-										-- Adaugă mesajul tău indiferent dacă a reușit sau nu decompilarea
-value = "-- THE GAME WAS STEALED BY XELO\n"
-     .. "-- JOIN THE DISCORD SERVER TO COPY ROBLOX GAMES\n"
-     .. "-- https://discord.gg/F9pywQsePr\n\n"
-     .. (hasLinkedSource and "-- Original Source: https://assetdelivery.roblox.com/v1/asset/?" .. (LinkedSource_type or "id") .. "=" .. (LinkedSource or LinkedSource_Url) .. "\n\n" or "")
-     .. (value or "-- Failed to decompile script")
+
+										value = "-- Saved by UniversalSynSaveInstance (Join to Copy Games) https://discord.gg/wx4ThpAsmw\n\n"
+											.. (hasLinkedSource and "-- Original Source: https://assetdelivery.roblox.com/v1/asset/?" .. (LinkedSource_type or "id") .. "=" .. (LinkedSource or LinkedSource_Url) .. "\n\n" or "")
+											.. value
 									end
 								end
 								value = XML_Descriptors.__PROTECTEDSTRING(value)
@@ -3892,7 +3884,7 @@ value = "-- THE GAME WAS STEALED BY XELO\n"
 		end
 
 		savebuffer[savebuffer_size] =
-	"</roblox><!-- THE GAME WAS STEALED BY XELO | https://discord.gg/F9pywQsePr -->"
+			"</roblox><!-- Saved by UniversalSynSaveInstance (Join to Copy Games) https://discord.gg/wx4ThpAsmw -->"
 		savebuffer_size += 1
 		save_cache()
 		do
