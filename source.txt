@@ -2288,11 +2288,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 	-- end
 
 	local totalsize, chunks = 0, table.create(1)
-	local savebuffer, savebuffer_size = {}, 1
-	local header =
-	'<!-- Saved by XELO STEALER v5.0 | Made by Xelo -->\n' ..
-	'<!-- Discord: ' .. (DiscordLink or "https://discord.gg/F9pywQsePr") .. ' -->\n' ..
-	'<roblox version="4">'
+	local savebuffer, savebuffer_size = {}, 1local header = '<roblox version="4">'
 	local StatusText
 
 	local OPTIONS = {
@@ -3596,7 +3592,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 											end
 										end
 
-										if should_decompile then
+																				if should_decompile then
 											local isLocalScript = instance:IsA("LocalScript")
 											if
 												isLocalScript and instance.RunContext == Enum.RunContext.Server
@@ -3616,11 +3612,19 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 											end
 										end
 
-										value = "-- Saved by XELO STEALER v5.0\n" ..
-       "-- Stealed & Decompiled by Xelo\n" ..
-       "-- Join for more uncopylocked games: " .. (DiscordLink or "https://discord.gg/F9pywQsePr") .. "\n\n" ..
-       (hasLinkedSource and "-- Original Source: https://assetdelivery.roblox.com/v1/asset/?" .. (LinkedSource_type or "id") .. "=" .. (LinkedSource or LinkedSource_Url) .. "\n\n" or "")
-       .. value
+										value = "-- Saved by UniversalSynSaveInstance (Join to Copy Games) https://discord.gg/wx4ThpAsmw\n\n"
+											.. (hasLinkedSource and "-- Original Source: https://assetdelivery.roblox.com/v1/asset/?" .. (LinkedSource_type or "id") .. "=" .. (LinkedSource or LinkedSource_Url) .. "\n\n" or "")
+											.. value
+													end
+												end
+											end
+										end
+value = "-- THE GAME WAS STEALED BY XELO\n-- JOIN THE DISCORD SERVER TO COPY ROBLOX GAMES\n-- https://discord.gg/F9pywQsePr\n\n"
+										value = "-- THE GAME WAS STEALED BY XELO\n"
+     .. "-- JOIN THE DISCORD SERVER TO COPY ROBLOX GAMES\n"
+     .. "-- https://discord.gg/F9pywQsePr\n\n"
+     .. (hasLinkedSource and "-- Original Source: https://assetdelivery.roblox.com/v1/asset/?" .. (LinkedSource_type or "id") .. "=" .. (LinkedSource or LinkedSource_Url) .. "\n\n" or "")
+     .. value
 									end
 								end
 								value = XML_Descriptors.__PROTECTEDSTRING(value)
