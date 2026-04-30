@@ -3031,23 +3031,11 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 
 				local output
 				if ok then
-    result = string.gsub(result, "\0", "\\0")
-    
-    -- Eliminăm header-ul Konstant (dacă există)
-    result = result:gsub("%-%- Decompiled with Konstant V2%.1.-%-%- Time taken:.-seconds\r?\n?\r?\n?", "")
-    result = result:gsub("%-%- Decompiled on %d%d%d%d%-%d%d%-%d%d .-[\r\n]+", "")
-    result = result:gsub("%-%- Luau version %d+, Types version %d+.-[\r\n]+", "")
-    
-    output = "-- THE GAME WAS STEALED BY XELO\n" ..
-             "-- JOIN THE DISCORD SERVER TO COPY ANY GAME\n" ..
-             "-- https://discord.gg/F9pywQsePr\n\n" ..
-             result
-else
-    output = "-- THE GAME WAS STEALED BY XELO\n" ..
-             "-- JOIN THE DISCORD SERVER TO COPY ANY GAME\n" ..
-             "-- https://discord.gg/F9pywQsePr\n\n" ..
-             "--[[\nFailed to decompile this script.\n]]"
-end
+					result = string.gsub(result, "\0", "\\0") -- ? Some decompilers sadly output \0 which prevents files from opening
+					output = result
+				else
+					output = "--[[ Failed to decompile. Reason:\n" .. (result or "") .. "\n]]"
+				end
 
 				if ScriptCache and bytecode then -- TODO there might(?) be an edgecase where it manages to decompile (built-in) even though getscriptbytecode failed, and the output won't get cached
 					ldeccache[bytecode] = output -- ? Should we cache even if it timed out?
