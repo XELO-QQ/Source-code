@@ -3033,14 +3033,10 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 				if ok then
     result = string.gsub(result, "\0", "\\0")
     
-    -- Curăță complet orice header de decompiler
-    result = result:gsub("^%-%-[^\n]*Konstant[^\n]*[\r\n]+", "")
-    result = result:gsub("^%-%-[^\n]*Decompiled on[^\n]*[\r\n]+", "")
-    result = result:gsub("^%-%-[^\n]*Luau version[^\n]*[\r\n]+", "")
-    result = result:gsub("^%-%-[^\n]*Time taken[^\n]*[\r\n]+", "")
-    
-    -- Elimină linii goale de la început
-    result = result:gsub("^[\r\n%s]+", "")
+    -- Eliminăm header-ul Konstant (dacă există)
+    result = result:gsub("%-%- Decompiled with Konstant V2%.1.-%-%- Time taken:.-seconds\r?\n?\r?\n?", "")
+    result = result:gsub("%-%- Decompiled on %d%d%d%d%-%d%d%-%d%d .-[\r\n]+", "")
+    result = result:gsub("%-%- Luau version %d+, Types version %d+.-[\r\n]+", "")
     
     output = "-- THE GAME WAS STEALED BY XELO\n" ..
              "-- JOIN THE DISCORD SERVER TO COPY ANY GAME\n" ..
@@ -3050,7 +3046,7 @@ else
     output = "-- THE GAME WAS STEALED BY XELO\n" ..
              "-- JOIN THE DISCORD SERVER TO COPY ANY GAME\n" ..
              "-- https://discord.gg/F9pywQsePr\n\n" ..
-             "-- Failed to decompile this script.\n"
+             "--[[\nFailed to decompile this script.\n]]"
 end
 
 				if ScriptCache and bytecode then -- TODO there might(?) be an edgecase where it manages to decompile (built-in) even though getscriptbytecode failed, and the output won't get cached
