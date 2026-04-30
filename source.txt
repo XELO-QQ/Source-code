@@ -3534,12 +3534,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 										if DecompileIgnoring == 1 then
 											DecompileIgnoring = nil
 										end
-										if DecompileIgnoring then
-    if DecompileIgnoring == 1 then
-        DecompileIgnoring = nil
-    end
-   
-
+										value = "-- Ignored"
 									else
 										local should_decompile = true
 										local LinkedSource
