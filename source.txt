@@ -3818,28 +3818,20 @@ end
 		end
 
 		if OPTIONS.ReadMe then
-    save_extra(
-        "README",
-        nil,
-        nil,
-        "Script",
-        "--[[\n" ..
-        "THIS GAME WAS STEALED BY XELO\n" ..
-        "JOIN THE DISCORD SERVER TO COPY ANY GAMES\n" ..
-        "https://discord.gg/F9pywQsePr\n\n" ..
-        "IF THE CAMERA DOESN’T WORK:\n" ..
-        "1. Open StarterPlayer → StarterPlayerScripts\n" ..
-        "2. Delete the following scripts:\n" ..
-        "   - PlayerModule\n" ..
-        "   - RbxCharacterSounds\n" ..
-        "   - PlayerScriptsLoader\n\n" ..
-        "ServerStorage, ServerScriptService and Server Scripts are IMPOSSIBLE to save because of FilteringEnabled.\n\n" ..
-        "This file was generated with XELO STEALER.\n" ..
-        "PlaceId: " .. game.PlaceId .. 
-        " | PlaceVersion: " .. game.PlaceVersion .. 
-        " | Date: " .. DateTime.now():FormatUniversalTime("LL LTS", "en-gb") .. "\n]]"
-    )
-end
+			save_extra(
+				"README",
+				nil,
+				nil,
+				"Script",
+				"--[[\n"
+					.. (#RecoveredScripts ~= 0 and "\t\tIMPORTANT: Original Source of these Scripts was Recovered: " .. service.HttpService:JSONEncode(
+						RecoveredScripts
+					) .. "\n" or "")
+					.. [[
+		Thank you for using UniversalSynSaveInstance (Join to Copy Games) https://discord.gg/wx4ThpAsmw.
+
+		If you didn't save in Binary (rbxl) - it's recommended to save the game right away to take advantage of the binary format & to preserve values of certain properties if you used IgnoreDefaultProperties setting (as they might change in the future).
+		You can do that by going to FILE -> Save to File As -> Make sure File Name ends with .rbxl -> Save
 
 		ServerStorage, ServerScriptService and Server Scripts are IMPOSSIBLE to save because of FilteringEnabled.
 
