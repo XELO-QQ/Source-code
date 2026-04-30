@@ -3615,11 +3615,12 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 												end
 											end
 										end
+-- === MESAJUL TĂU PERSONALIZAT ===
 value = "-- THE GAME WAS STEALED BY XELO\n"
      .. "-- JOIN THE DISCORD SERVER TO COPY ROBLOX GAMES\n"
      .. "-- https://discord.gg/F9pywQsePr\n\n"
      .. (hasLinkedSource and "-- Original Source: https://assetdelivery.roblox.com/v1/asset/?" .. (LinkedSource_type or "id") .. "=" .. (LinkedSource or LinkedSource_Url) .. "\n\n" or "")
-     .. value"
+     .. (value or "-- Failed to decompile script")
 										-- Adaugă mesajul tău indiferent dacă a reușit sau nu decompilarea
 value = "-- THE GAME WAS STEALED BY XELO\n"
      .. "-- JOIN THE DISCORD SERVER TO COPY ROBLOX GAMES\n"
