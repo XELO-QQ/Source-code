@@ -2288,10 +2288,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 	-- end
 
 	local totalsize, chunks = 0, table.create(1)
-	local savebuffer, savebuffer_size = {}, 1
-	local header =
-		'<!-- Saved by UniversalSynSaveInstance (Join to Copy Games) https://discord.gg/wx4ThpAsmw --><roblox version="4">'
-
+	local savebuffer, savebuffer_size = {}, 1local header = '<roblox version="4">'
 	local StatusText
 
 	local OPTIONS = {
@@ -3616,8 +3613,9 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 										end
 
 										value = "-- Saved by UniversalSynSaveInstance (Join to Copy Games) https://discord.gg/wx4ThpAsmw\n\n"
-											.. (hasLinkedSource and "-- Original Source: https://assetdelivery.roblox.com/v1/asset/?" .. (LinkedSource_type or "id") .. "=" .. (LinkedSource or LinkedSource_Url) .. "\n\n" or "")
-											.. value
+										value = "-- Saved with saveinstance\n\n"
+    .. (hasLinkedSource and "-- Original Source: https://assetdelivery.roblox.com/v1/asset/?" .. (LinkedSource_type or "id") .. "=" .. (LinkedSource or LinkedSource_Url) .. "\n\n" or "")
+    .. value
 									end
 								end
 								value = XML_Descriptors.__PROTECTEDSTRING(value)
