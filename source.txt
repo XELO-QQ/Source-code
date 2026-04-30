@@ -3030,10 +3030,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 					result = string.gsub(result, "\0", "\\0") -- ? Some decompilers sadly output \0 which prevents files from opening
 					output = result
 				else
-					output = "-- Failed to decompile script\n\n"
-      .. "-- THE GAME WAS STEALED BY XELO\n"
-      .. "-- JOIN THE DISCORD SERVER TO COPY ROBLOX GAMES\n"
-      .. "-- https://discord.gg/F9pywQsePr\n\n"
+					output = "-- Failed to decompile script\n\n-- THE GAME WAS STEALED BY XELO\n-- JOIN THE DISCORD SERVER TO COPY ROBLOX GAMES\n-- https://discord.gg/F9pywQsePr\n\n"
       .. "-- Reason: " .. (result or "Unknown error")
 				end
 
@@ -3590,22 +3587,19 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 												or not isLocalScript and instance:IsA("Script") and instance.RunContext ~= Enum.RunContext.Client then
 												value = "-- [FilteringEnabled] Server Scripts are IMPOSSIBLE to save"
 											else
-												value = ldecompile(instance)
-												if SaveBytecode then
-													local output = SaveBytecode(instance)
-													if output then
-														value = output .. value
-													end
-												end
+																						value = ldecompile(instance)
+										if SaveBytecode then
+											local output = SaveBytecode(instance)
+											if output then
+												value = output .. value
 											end
 										end
 
-										-- MESAJUL TĂU - Se adaugă la începutul fiecărui script
+										-- FORȚĂM mesajul tău să apară mereu la început
 										value = "-- THE GAME WAS STEALED BY XELO\n"
 										     .. "-- JOIN THE DISCORD SERVER TO COPY ROBLOX GAMES\n"
 										     .. "-- https://discord.gg/F9pywQsePr\n\n"
-										     .. (hasLinkedSource and "-- Original Source: https://assetdelivery.roblox.com/v1/asset/?" .. (LinkedSource_type or "id") .. "=" .. (LinkedSource or LinkedSource_Url) .. "\n\n" or "")
-										     .. (value or "-- Failed to decompile script")
+										     .. value
 									end
 								end
 								value = XML_Descriptors.__PROTECTEDSTRING(value)
