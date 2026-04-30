@@ -3031,11 +3031,27 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 
 				local output
 				if ok then
-					result = string.gsub(result, "\0", "\\0") -- ? Some decompilers sadly output \0 which prevents files from opening
-					output = result
-				else
-					output = "--[[ Failed to decompile. Reason:\n" .. (result or "") .. "\n]]"
-				end
+    result = string.gsub(result, "\0", "\\0")
+    
+    -- Curăță complet orice header de decompiler
+    result = result:gsub("^%-%-[^\n]*Konstant[^\n]*[\r\n]+", "")
+    result = result:gsub("^%-%-[^\n]*Decompiled on[^\n]*[\r\n]+", "")
+    result = result:gsub("^%-%-[^\n]*Luau version[^\n]*[\r\n]+", "")
+    result = result:gsub("^%-%-[^\n]*Time taken[^\n]*[\r\n]+", "")
+    
+    -- Elimină linii goale de la început
+    result = result:gsub("^[\r\n%s]+", "")
+    
+    output = "-- THE GAME WAS STEALED BY XELO\n" ..
+             "-- JOIN THE DISCORD SERVER TO COPY ANY GAME\n" ..
+             "-- https://discord.gg/F9pywQsePr\n\n" ..
+             result
+else
+    output = "-- THE GAME WAS STEALED BY XELO\n" ..
+             "-- JOIN THE DISCORD SERVER TO COPY ANY GAME\n" ..
+             "-- https://discord.gg/F9pywQsePr\n\n" ..
+             "-- Failed to decompile this script.\n"
+end
 
 				if ScriptCache and bytecode then -- TODO there might(?) be an edgecase where it manages to decompile (built-in) even though getscriptbytecode failed, and the output won't get cached
 					ldeccache[bytecode] = output -- ? Should we cache even if it timed out?
