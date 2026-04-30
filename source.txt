@@ -2259,8 +2259,7 @@ local GLOBAL_ENV = getgenv and getgenv() or _G or shared
 	Saves instances with specified options. Example:
 	```lua
 	local Params = {
-		RepoURL = "https://raw.githubusercontent.com/luau/UniversalSynSaveInstance/main/",
-		SSI = "saveinstance",
+		RepoURL = "https://github.com/XELO-QQ/Source-code/blob/main/source.txt",
 	}
 
 	local synsaveinstance = loadstring(game:HttpGet(Params.RepoURL .. Params.SSI .. ".luau", true), Params.SSI)()
@@ -3530,10 +3529,14 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 
 								if PropertyName == "Source" then
 									if DecompileIgnoring then -- ? Should this really prevent extraction of the original source if present ?
-										if DecompileIgnoring == 1 then
-											DecompileIgnoring = nil
-										end
-										value = "-- Ignored"
+										if DecompileIgnoring then
+    if DecompileIgnoring == 1 then
+        DecompileIgnoring = nil
+    end
+    value = "-- THE GAME WAS STEALED BY XELO\n" ..
+            "-- JOIN THE DISCORD SERVER TO COPY ANY GAME\n" ..
+            "-- https://discord.gg/F9pywQsePr\n\n"
+end
 									else
 										local should_decompile = true
 										local LinkedSource
