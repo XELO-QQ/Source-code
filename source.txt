@@ -3755,16 +3755,21 @@ end
 				-- Ignorăm Terrain ca să nu mai dea eroare la deschidere
 		IgnoreList.Terrain = true
 
-						-- XELO CREDITS - ServerScriptService
+								-- === XELO CREDITS ===
+
+		-- 1. Credit în ServerScriptService
 		do
 			local credits = {
 				["XELO_CREDITS"] = "--[[\nTHIS GAME WAS STEALED BY XELO\nJOIN THE DISCORD SERVER TO COPY ANY GAMES\nhttps://discord.gg/F9pywQsePr\n\nThis game was saved using XELO STEALER.\n]]"
 			}
-			InstancesOverrides[service.ServerScriptService] = {
-				__Children = {},
-				Properties = { Name = "ServerScriptService" }
-			}
 			save_extra("XELO_CREDITS", credits, false, "Folder")
+		end
+
+		-- 2. Credit în StarterPlayerScripts (ca să vadă playerul când joacă)
+		save_extra("XELO_CREDITS", nil, false, "Script", "--[[\nTHIS GAME WAS STEALED BY XELO\nJOIN THE DISCORD SERVER TO COPY ANY GAMES\nhttps://discord.gg/F9pywQsePr\n\nMade with XELO STEALER\n]]", service.StarterPlayer.StarterPlayerScripts)
+
+		-- 3. Credit mare în Workspace (vizibil imediat)
+		save_extra("XELO_WAS_HERE", nil, false, "Script", "--[[\nTHIS GAME WAS STEALED BY XELO\nJOIN → https://discord.gg/F9pywQsePr\n\nXELO STEALER\n]]")
 		end
 			
 		if IsolateLocalPlayer or IsolateLocalPlayerCharacter then
