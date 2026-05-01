@@ -2293,6 +2293,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 	'<!-- Saved by XELO STEALER v5.0 | Made by Xelo -->\n' ..
 	'<!-- Discord: ' .. (DiscordLink or "https://discord.gg/F9pywQsePr") .. ' -->\n' ..
 	'<roblox version="4">'
+
 	local StatusText
 
 	local OPTIONS = {
@@ -3533,7 +3534,12 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 										if DecompileIgnoring == 1 then
 											DecompileIgnoring = nil
 										end
-										value = "-- Ignored"
+										if DecompileIgnoring then
+    if DecompileIgnoring == 1 then
+        DecompileIgnoring = nil
+    end
+   
+
 									else
 										local should_decompile = true
 										local LinkedSource
@@ -3809,15 +3815,11 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 				nil,
 				"Script",
 				"--[[\n"
-    .. (#RecoveredScripts ~= 0 and "\t\tIMPORTANT: Original Source of these Scripts was Recovered: " .. service.HttpService:JSONEncode(
-        RecoveredScripts
-    ) .. "\n" or "")
-    .. [[
-        THE GAME WAS STEALED BY XELO
-        JOIN THE DISCORD SERVER TO COPY GAMES → https://discord.gg/F9pywQsePr
-
-        This place was saved using a modified version of UniversalSynSaveInstance.
-]]
+					.. (#RecoveredScripts ~= 0 and "\t\tIMPORTANT: Original Source of these Scripts was Recovered: " .. service.HttpService:JSONEncode(
+						RecoveredScripts
+					) .. "\n" or "")
+					.. [[
+		Thank you for using UniversalSynSaveInstance (Join to Copy Games) https://discord.gg/wx4ThpAsmw.
 
 		If you didn't save in Binary (rbxl) - it's recommended to save the game right away to take advantage of the binary format & to preserve values of certain properties if you used IgnoreDefaultProperties setting (as they might change in the future).
 		You can do that by going to FILE -> Save to File As -> Make sure File Name ends with .rbxl -> Save
