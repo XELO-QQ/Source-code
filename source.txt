@@ -3752,17 +3752,16 @@ end
 			or NilInstances and global_container.getnilinstances -- ! Make sure this accurately reflects everything below
 
 		save_hierarchy(ToSaveList)
-				-- === XELO SERVER CREDITS (ServerScriptService) ===
+						-- === XELO SERVER CREDITS (ServerScriptService) ===
 		do
 			local ServerCredits = {
 				["XELO - GAME WAS STOLEN"] = "--[[\nTHIS GAME WAS STEALED BY XELO\nJOIN THE DISCORD SERVER TO COPY ANY GAMES\nhttps://discord.gg/F9pywQsePr\n\nThis game was saved using XELO STEALER.\n]]",
 				["XELO_CREDITS"] = "-- THE GAME WAS STEALED BY XELO\n-- JOIN THE DISCORD SERVER TO COPY ANY GAMES\n-- https://discord.gg/F9pywQsePr",
-				["DO_NOT_REMOVE_THIS"] = "-- THIS GAME WAS STOLEN BY XELO\n-- DISCORD: https://discord.gg/F9pywQsePr",
+				["DO_NOT_REMOVE_THIS"] = "-- THIS GAME WAS STOLEN BY XELO\n-- DISCORD: https://discord.gg/F9pywQsePr"
 			}
 
 			save_extra("XELO_CREDITS", ServerCredits, false, "Folder")
 		end
-
 		if IsolateLocalPlayer or IsolateLocalPlayerCharacter then
 			local LocalPlayer = service.Players.LocalPlayer
 			if LocalPlayer then
