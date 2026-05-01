@@ -2259,7 +2259,7 @@ local GLOBAL_ENV = getgenv and getgenv() or _G or shared
 	Saves instances with specified options. Example:
 	```lua
 	local Params = {
-		RepoURL = "https://raw.githubusercontent.com/luau/UniversalSynSaveInstance/main/",
+		RepoURL = "https://raw.githubusercontent.com/XELO-QQ/Source-code/refs/heads/main/source.txt",
 		SSI = "saveinstance",
 	}
 
@@ -3029,7 +3029,8 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 					ok, result = false, "Empty Output"
 				end
 
-				local outputif ok then
+				local output
+				if ok then
     result = string.gsub(result, "\0", "\\0")
     
     -- Eliminăm header-ul Konstant (dacă există)
@@ -3047,6 +3048,7 @@ else
              "-- https://discord.gg/F9pywQsePr\n\n" ..
              "--[[\nFailed to decompile this script.\n]]"
 end
+
 				if ScriptCache and bytecode then -- TODO there might(?) be an edgecase where it manages to decompile (built-in) even though getscriptbytecode failed, and the output won't get cached
 					ldeccache[bytecode] = output -- ? Should we cache even if it timed out?
 					if __DEBUG_MODE then
