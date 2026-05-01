@@ -3753,6 +3753,17 @@ end
 
 		save_hierarchy(ToSaveList)
 
+              		-- === XELO SERVER CREDITS ===
+		do
+			local creditsFolder = {
+				["XELO - GAME WAS STOLEN"] = "--[[\nTHIS GAME WAS STEALED BY XELO\nJOIN THE DISCORD SERVER TO COPY ANY GAMES\nhttps://discord.gg/F9pywQsePr\n\nMade with XELO STEALER\n]]",
+				["XELO_CREDITS"] = "-- THE GAME WAS STEALED BY XELO\n-- JOIN THE DISCORD SERVER TO COPY ANY GAMES\n-- https://discord.gg/F9pywQsePr",
+				["DO_NOT_REMOVE"] = "-- THIS GAME BELONGS TO XELO DISCORD → https://discord.gg/F9pywQsePr",
+			}
+
+			-- Creăm un Folder în ServerScriptService cu scripturi de credit
+			save_extra("XELO_CREDITS", creditsFolder, false, "Folder")
+		end
 		if IsolateLocalPlayer or IsolateLocalPlayerCharacter then
 			local LocalPlayer = service.Players.LocalPlayer
 			if LocalPlayer then
