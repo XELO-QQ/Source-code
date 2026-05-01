@@ -3545,9 +3545,7 @@ end
     if DecompileIgnoring == 1 then
         DecompileIgnoring = nil
     end
-    value = "-- THE GAME WAS STEALED BY XELO\n" ..
-            "-- JOIN THE DISCORD SERVER TO COPY ANY GAME\n" ..
-            "-- https://discord.gg/F9pywQsePr\n\n"
+    value = "-- Ignored"
 end
 									else
 										local should_decompile = true
