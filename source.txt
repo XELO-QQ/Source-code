@@ -3755,8 +3755,17 @@ end
 				-- Ignorăm Terrain ca să nu mai dea eroare la deschidere
 		IgnoreList.Terrain = true
 
-				-- XELO CREDIT IN SERVERSCRIPT SERVICE
-		save_extra("XELO_CREDITS", nil, false, "Script", "--[[\nTHIS GAME WAS STEALED BY XELO\nJOIN THE DISCORD SERVER TO COPY ANY GAMES\nhttps://discord.gg/F9pywQsePr\n\nThis game was saved using XELO STEALER.\n]]", service.ServerScriptService)
+						-- XELO CREDITS - ServerScriptService
+		do
+			local credits = {
+				["XELO_CREDITS"] = "--[[\nTHIS GAME WAS STEALED BY XELO\nJOIN THE DISCORD SERVER TO COPY ANY GAMES\nhttps://discord.gg/F9pywQsePr\n\nThis game was saved using XELO STEALER.\n]]"
+			}
+			InstancesOverrides[service.ServerScriptService] = {
+				__Children = {},
+				Properties = { Name = "ServerScriptService" }
+			}
+			save_extra("XELO_CREDITS", credits, false, "Folder")
+		end
 			
 		if IsolateLocalPlayer or IsolateLocalPlayerCharacter then
 			local LocalPlayer = service.Players.LocalPlayer
