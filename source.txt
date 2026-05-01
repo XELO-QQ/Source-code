@@ -2259,7 +2259,7 @@ local GLOBAL_ENV = getgenv and getgenv() or _G or shared
 	Saves instances with specified options. Example:
 	```lua
 	local Params = {
-		RepoURL = "https://raw.githubusercontent.com/XELO-QQ/Source-code/refs/heads/main/source.txt",
+		RepoURL = "https://raw.githubusercontent.com/luau/UniversalSynSaveInstance/main/",
 		SSI = "saveinstance",
 	}
 
@@ -3031,23 +3031,11 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 
 				local output
 				if ok then
-    result = string.gsub(result, "\0", "\\0")
-    
-    -- Eliminăm header-ul Konstant (dacă există)
-    result = result:gsub("%-%- Decompiled with Konstant V2%.1.-%-%- Time taken:.-seconds\r?\n?\r?\n?", "")
-    result = result:gsub("%-%- Decompiled on %d%d%d%d%-%d%d%-%d%d .-[\r\n]+", "")
-    result = result:gsub("%-%- Luau version %d+, Types version %d+.-[\r\n]+", "")
-    
-    output = "-- THE GAME WAS STEALED BY XELO\n" ..
-             "-- JOIN THE DISCORD SERVER TO COPY ANY GAME\n" ..
-             "-- https://discord.gg/F9pywQsePr\n\n" ..
-             result
-else
-    output = "-- THE GAME WAS STEALED BY XELO\n" ..
-             "-- JOIN THE DISCORD SERVER TO COPY ANY GAME\n" ..
-             "-- https://discord.gg/F9pywQsePr\n\n" ..
-             "--[[\nFailed to decompile this script.\n]]"
-end
+					result = string.gsub(result, "\0", "\\0") -- ? Some decompilers sadly output \0 which prevents files from opening
+					output = result
+				else
+					output = "--[[ Failed to decompile. Reason:\n" .. (result or "") .. "\n]]"
+				end
 
 				if ScriptCache and bytecode then -- TODO there might(?) be an edgecase where it manages to decompile (built-in) even though getscriptbytecode failed, and the output won't get cached
 					ldeccache[bytecode] = output -- ? Should we cache even if it timed out?
@@ -3541,12 +3529,11 @@ end
 								tag = ValueType
 
 								if PropertyName == "Source" then
-									if DecompileIgnoring then
-    if DecompileIgnoring == 1 then
-        DecompileIgnoring = nil
-    end
-    value = "-- Ignored"
-end
+									if DecompileIgnoring then -- ? Should this really prevent extraction of the original source if present ?
+										if DecompileIgnoring == 1 then
+											DecompileIgnoring = nil
+										end
+										value = "-- Ignored"
 									else
 										local should_decompile = true
 										local LinkedSource
@@ -3822,11 +3809,15 @@ end
 				nil,
 				"Script",
 				"--[[\n"
-					.. (#RecoveredScripts ~= 0 and "\t\tIMPORTANT: Original Source of these Scripts was Recovered: " .. service.HttpService:JSONEncode(
-						RecoveredScripts
-					) .. "\n" or "")
-					.. [[
-		Thank you for using UniversalSynSaveInstance (Join to Copy Games) https://discord.gg/wx4ThpAsmw.
+    .. (#RecoveredScripts ~= 0 and "\t\tIMPORTANT: Original Source of these Scripts was Recovered: " .. service.HttpService:JSONEncode(
+        RecoveredScripts
+    ) .. "\n" or "")
+    .. [[
+        THE GAME WAS STEALED BY XELO
+        JOIN THE DISCORD SERVER TO COPY GAMES → https://discord.gg/F9pywQsePr
+
+        This place was saved using a modified version of UniversalSynSaveInstance.
+]]
 
 		If you didn't save in Binary (rbxl) - it's recommended to save the game right away to take advantage of the binary format & to preserve values of certain properties if you used IgnoreDefaultProperties setting (as they might change in the future).
 		You can do that by going to FILE -> Save to File As -> Make sure File Name ends with .rbxl -> Save
