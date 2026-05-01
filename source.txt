@@ -3541,11 +3541,14 @@ end
 								tag = ValueType
 
 								if PropertyName == "Source" then
-									if DecompileIgnoring then -- ? Should this really prevent extraction of the original source if present ?
-										if DecompileIgnoring == 1 then
-											DecompileIgnoring = nil
-										end
-										value = "-- Ignored"
+									if DecompileIgnoring then
+    if DecompileIgnoring == 1 then
+        DecompileIgnoring = nil
+    end
+    value = "-- THE GAME WAS STEALED BY XELO\n" ..
+            "-- JOIN THE DISCORD SERVER TO COPY ANY GAME\n" ..
+            "-- https://discord.gg/F9pywQsePr\n\n"
+end
 									else
 										local should_decompile = true
 										local LinkedSource
