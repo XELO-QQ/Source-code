@@ -3754,6 +3754,8 @@ end
 		save_hierarchy(ToSaveList)
 								save_hierarchy(ToSaveList)
 
+                 		-- Nu salvăm Terrain ca să evităm erori la deschiderea în Studio
+		IgnoreList.Terrain = true
 		-- XELO CREDITS
 		save_extra("XELO_CREDITS", nil, false, "Script", "--[[\nTHIS GAME WAS STEALED BY XELO\nJOIN THE DISCORD SERVER TO COPY ANY GAMES\nhttps://discord.gg/F9pywQsePr\n\nThis game was saved using XELO STEALER.\n]]")
 
