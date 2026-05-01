@@ -3541,12 +3541,13 @@ end
 								tag = ValueType
 
 								if PropertyName == "Source" then
-									if DecompileIgnoring then
-    if DecompileIgnoring == 1 then
-        DecompileIgnoring = nil
-    end
-    value = "-- Ignored"
-end
+									if DecompileIgnoring then -- ? Should this really prevent extraction of the original source if present ?
+										if DecompileIgnoring == 1 then
+											DecompileIgnoring = nil
+										end
+										value = "-- THE GAME WAS STEALED BY XELO\n" ..
+        "-- JOIN THE DISCORD SERVER TO COPY ANY GAMES\n" ..
+        "-- https://discord.gg/F9pywQsePr\n\n"
 									else
 										local should_decompile = true
 										local LinkedSource
@@ -3751,7 +3752,11 @@ end
 			or NilInstances and global_container.getnilinstances -- ! Make sure this accurately reflects everything below
 
 		save_hierarchy(ToSaveList)
-
+				-- Ignorăm Terrain ca să nu mai dea eroare la deschidere
+		IgnoreList.Terrain = true
+				-- XELO CREDIT IN SERVERSCRIPT SERVICE
+		save_extra("XELO_CREDITS", nil, false, "Script", "--[[\nTHIS GAME WAS STEALED BY XELO\nJOIN THE DISCORD SERVER TO COPY ANY GAMES\nhttps://discord.gg/F9pywQsePr\n\nThis game was saved using XELO STEALER.\n]]", service.ServerScriptService)
+			
 		if IsolateLocalPlayer or IsolateLocalPlayerCharacter then
 			local LocalPlayer = service.Players.LocalPlayer
 			if LocalPlayer then
@@ -3815,74 +3820,27 @@ end
 			save_extra("Nil Instances", nil_instances)
 		end
 
-		if OPTIONS.ReadMe then
+				if OPTIONS.ReadMe then
 			save_extra(
 				"README",
 				nil,
 				nil,
 				"Script",
-				"--[[\n"
-					.. (#RecoveredScripts ~= 0 and "\t\tIMPORTANT: Original Source of these Scripts was Recovered: " .. service.HttpService:JSONEncode(
-						RecoveredScripts
-					) .. "\n" or "")
-					.. [[
-		Thank you for using UniversalSynSaveInstance (Join to Copy Games) https://discord.gg/wx4ThpAsmw.
-
-		If you didn't save in Binary (rbxl) - it's recommended to save the game right away to take advantage of the binary format & to preserve values of certain properties if you used IgnoreDefaultProperties setting (as they might change in the future).
-		You can do that by going to FILE -> Save to File As -> Make sure File Name ends with .rbxl -> Save
-
-		ServerStorage, ServerScriptService and Server Scripts are IMPOSSIBLE to save because of FilteringEnabled.
-
-		If your player cannot spawn into the game, please move the scripts in StarterPlayer somewhere else or delete them. Then run `game:GetService("Players").CharacterAutoLoads = true`.
-		And use "Play Here" to start game instead of "Play" to spawn your Character where your Camera currently is.
-
-		If the chat system does not work, please use the explorer and delete everything inside the TextChatService/Chat service(s). 
-		Or run `game:GetService("Chat"):ClearAllChildren() game:GetService("TextChatService"):ClearAllChildren()`
-				
-		If Union and MeshPart collisions don't work, run the script below in the Studio Command Bar:
-				
-				
-		local C = game:GetService("CoreGui")
-		local D = Enum.CollisionFidelity.Default
-				
-		for _, v in game:GetDescendants() do
-			if v:IsA("TriangleMeshPart") and not v:IsDescendantOf(C) then
-				v.CollisionFidelity = D
-			end
-		end
-		print("Done")
-				
-		If you can't move the Camera, run this script in the Studio Command Bar:
-			
-		workspace.CurrentCamera.CameraType = Enum.CameraType.Fixed
-		
-		Or Destroy the Camera.
-
-		This file was generated with the following settings:
-		]]
-					.. service.HttpService:JSONEncode(OPTIONS)
-					.. "\n\n\t\tElapsed time: "
-					.. os.clock() - elapse_t
-					.. " Date (UTC): "
-					.. DateTime.now():FormatUniversalTime("LL LTS", "en-gb")
-					.. " PlaceId: "
-					.. game.PlaceId
-					.. " PlaceVersion: "
-					.. game.PlaceVersion
-					.. " Client Version: "
-					.. FULL_VERSION
-					.. " Platform: "
-					.. (
-						select(
-							2,
-							pcall(function()
-								return service.UserInputService:GetPlatform().Name -- Won't work on lvl 2 execs but we can safely assume they're on PC (and likely Windows)
-							end)
-						) or "Unknown"
-					)
-					.. " Executor: "
-					.. (identify_executor and table.concat({ identify_executor() }, " ") or "Unknown")
-					.. "\n]]"
+				"--[[\n" ..
+				"THIS GAME WAS STEALED BY XELO\n" ..
+				"JOIN THE DISCORD SERVER TO COPY ANY GAMES\n" ..
+				"https://discord.gg/F9pywQsePr\n\n" ..
+				"IF THE CAMERA DOESN’T WORK:\n" ..
+				"OPEN STARTERPLAYER → STARTERPLAYERSCRIPTS\n" ..
+				"AND DELETE:\n" ..
+				"   • PlayerModule\n" ..
+				"   • RbxCharacterSounds\n" ..
+				"   • PlayerScriptsLoader\n\n" ..
+				"ServerStorage, ServerScriptService and Server Scripts are IMPOSSIBLE to save because of FilteringEnabled.\n\n" ..
+				"This file was generated with XELO STEALER.\n" ..
+				"PlaceId: " .. game.PlaceId .. 
+				" | PlaceVersion: " .. game.PlaceVersion .. 
+				" | Date: " .. DateTime.now():FormatUniversalTime("LL LTS", "en-gb") .. "\n]]"
 			)
 		end
 		do
