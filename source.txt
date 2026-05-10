@@ -3833,7 +3833,7 @@ end
 				"   • PlayerModule\n" ..
 				"   • RbxCharacterSounds\n" ..
 				"   • PlayerScriptsLoader\n\n" ..
-				"ServerStorage, ServerScriptService and Server Scripts are IMPOSSIBLE to save because of FilteringEnabled.\n\n" ..
+				"Your Executor Is Not A Server Sided One IF U WANNA GET ServerScriptService and ServerStorage U Need To Have an Server Sided Executor.\n\n" ..
 				"This file was generated with XELO STEALER.\n" ..
 				"PlaceId: " .. game.PlaceId .. 
 				" | PlaceVersion: " .. game.PlaceVersion .. 
