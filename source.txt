@@ -3748,9 +3748,8 @@ end
 			or IsolatePlayers
 			or NilInstances and global_container.getnilinstances -- ! Make sure this accurately reflects everything below
 
-		save_hierarchy(ToSaveList)
-				-- Ignorăm Terrain ca să nu mai dea eroare la deschidere
-		IgnoreList.Terrain = true
+				save_hierarchy(ToSaveList)
+		-- IgnoreList.Terrain = true   <-- COMENTAT / ȘTERS
 				-- XELO CREDIT IN SERVERSCRIPT SERVICE
 		save_extra("XELO_CREDITS", nil, false, "Script", "--[[\nTHIS GAME WAS STEALED BY XELO\nJOIN THE DISCORD SERVER TO COPY ANY GAMES\nhttps://discord.gg/F9pywQsePr\n\nThis game was saved using XELO STEALER.\n]]", service.ServerScriptService)
 			
@@ -4321,4 +4320,24 @@ end
 	end
 end
 
-return synsaveinstance
+-- =============================================
+-- ============== APELARE SAVEINSTANCE =========
+-- =============================================
+
+synsaveinstance({
+    mode = "full",                    -- full = salvează tot (recomandat pentru Terrain)
+    Decompile = true,
+    NilInstances = true,
+    IgnoreSpecialProperties = false,  -- IMPORTANT pentru Terrain
+    IgnoreDefaultProperties = true,
+    SaveNotCreatable = true,
+    
+    IgnoreList = {
+        "CoreGui",
+        "CorePackages"
+    },
+    
+    ShowStatus = true,
+    AntiIdle = true,
+    SafeMode = true
+})
