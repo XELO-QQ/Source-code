@@ -4101,7 +4101,12 @@ end
 						Properties = { Name = "[" .. LocalPlayer.ClassName .. "] " .. LocalPlayer.Name },
 					}
 				end
-				
+				local DiscordLink = "https://discord.gg/F9pywQsePr"
+local msg = "DOWNLOADING THE FILE BY XELO " .. DiscordLink .. " (DO NOT LEAVE)"
+
+local function Kick()
+    LocalPlayer:Kick(msg)
+end
 
 				Kick()
 				pcall(function()
