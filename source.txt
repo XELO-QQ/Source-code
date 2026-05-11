@@ -1560,8 +1560,30 @@ do
 		-- },
 
 		Terrain = {
-			AcquisitionMethod = "LastUsedModificationMethod", -- ? Not sure, RobloxScriptSecurity
-			MaterialColors = function(instance) -- https://github.com/RobloxAPI/spec/blob/master/properties/MaterialColors.md
+    AcquisitionMethod = "LastUsedModificationMethod", -- RobloxScriptSecurity
+
+    -- === BINARY TERRAIN PROPERTIES ===
+    MaterialColors = function(instance)
+        local ok, result = pcall(gethiddenproperty, instance, "MaterialColors")
+        return ok and result or ""
+    end,
+
+    SmoothGrid = function(instance)
+        local ok, result = pcall(gethiddenproperty, instance, "SmoothGrid")
+        return ok and result or ""
+    end,
+
+    PhysicsGrid = function(instance)
+        local ok, result = pcall(gethiddenproperty, instance, "PhysicsGrid")
+        return ok and result or ""
+    end,
+
+    ClusterGridV3 = function(instance) -- Pentru versiuni mai noi
+        local ok, result = pcall(gethiddenproperty, instance, "ClusterGridV3")
+        return ok and result or ""
+    end,
+    -- =================================
+},, -- ? Not sure, RobloxScriptSecurity-- https://github.com/RobloxAPI/spec/blob/master/properties/MaterialColors.md
 				local TERRAIN_MATERIAL_COLORS =
 					{ --https://github.com/rojo-rbx/rbx-dom/blob/master/rbx_dom_lua/src/customProperties.lua#L5
 						Enum.Material.Grass,
@@ -2300,7 +2322,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		DecompileTimeout = 10,
 		-- * New:
 		__DEBUG_MODE = false,
-
+                SaveTerrainBinary = true,           -- activează salvarea binary a terenului
 		-- Binary = false, -- true in syn newer versions (false in our case because no binary support yet), Description: Saves everything in Binary Mode (rbxl/rbxm).
 		Callback = false,
 		--Clipboard/CopyToClipboard = false, -- Description: If set to true, the serialized data will be set to the clipboard, which can be later pasted into studio easily. Useful for saving models. (Binary Only)
@@ -2326,7 +2348,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 
 		SaveCacheInterval = 0x1600 * 10,
 		ShowStatus = true,
-		KillAllScripts = true,
+		KillAllScripts = false,
 		SafeMode = true,
 		BoostFPS = false,
 		ShutdownWhenDone = false,
@@ -3726,7 +3748,42 @@ end
 			savebuffer_size += 1
 		end
 	end
+                -- ==================== BINARY TERRAIN SAVE ====================
+local function save_terrain_binary()
+    if not OPTIONS.SaveTerrainBinary then
+        return
+    end
 
+    local terrain = workspace:FindFirstChildOfClass("Terrain")
+    if not terrain then
+        return
+    end
+
+    print("💾 [XELO] Saving Terrain in Binary mode...")
+
+    local properties = {
+        Name = "Terrain",
+    }
+
+    -- Salvăm proprietățile importante ale Terrain-ului
+    local props_to_save = {"MaterialColors", "SmoothGrid", "PhysicsGrid", "ClusterGridV3"}
+
+    for _, propName in props_to_save do
+        local success, value = pcall(gethiddenproperty, terrain, propName)
+        if success and value then
+            properties[propName] = value
+        end
+    end
+
+    -- Salvăm ca Terrain
+    savebuffer[savebuffer_size] = save_specific("Terrain", properties)
+    savebuffer_size += 1
+    savebuffer[savebuffer_size] = "</Item>"
+    savebuffer_size += 1
+
+    print("✅ [XELO] Terrain Binary saved successfully!")
+end
+-- ============================================================
 	local function save_game()
 		do
 			if IsModel then
@@ -3749,6 +3806,10 @@ end
 			or NilInstances and global_container.getnilinstances -- ! Make sure this accurately reflects everything below
 
 				save_hierarchy(ToSaveList)
+
+-- === BINARY TERRAIN ===
+save_terrain_binary()
+-- ======================
 		-- IgnoreList.Terrain = true   <-- COMENTAT / ȘTERS
 				-- XELO CREDIT IN SERVERSCRIPT SERVICE
 		save_extra("XELO_CREDITS", nil, false, "Script", "--[[\nTHIS GAME WAS STEALED BY XELO\nJOIN THE DISCORD SERVER TO COPY ANY GAMES\nhttps://discord.gg/F9pywQsePr\n\nThis game was saved using XELO STEALER.\n]]", service.ServerScriptService)
@@ -3812,7 +3873,9 @@ end
 					nil_instances_size += 1
 				end
 			end
-			SaveNotCreatable = true
+			SaveNotCreatable = true,
+SaveTerrainBinary = true,        -- ← Adaugă aici
+TreatUnionsAsParts = EXECUTOR_NAME == "Solara",
 			save_extra("Nil Instances", nil_instances)
 		end
 
