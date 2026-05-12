@@ -4320,12 +4320,16 @@ end
 	end
 end
 
+-- =============================================
+-- ============== APELARE SAVEINSTANCE =========
+-- =============================================
+
 synsaveinstance({
-    mode = "full",                    -- foarte important
+    mode = "full",                    -- full = salvează tot (recomandat pentru Terrain)
     Decompile = true,
     NilInstances = true,
-    IgnoreSpecialProperties = false,  -- crucial pentru Terrain
-    IgnoreDefaultProperties = false,  -- pune false temporar
+    IgnoreSpecialProperties = false,  -- IMPORTANT pentru Terrain
+    IgnoreDefaultProperties = true,
     SaveNotCreatable = true,
     
     IgnoreList = {
@@ -4333,6 +4337,7 @@ synsaveinstance({
         "CorePackages"
     },
     
-    ShowStatus = false,
+    ShowStatus = true,
     AntiIdle = true,
+    SafeMode = true
 })
