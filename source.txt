@@ -4326,10 +4326,11 @@ end
 
 synsaveinstance({
     mode = "full",                    -- full = salvează tot (recomandat pentru Terrain)
+    Object = game,
     Decompile = true,
     NilInstances = true,
     IgnoreSpecialProperties = false,  -- IMPORTANT pentru Terrain
-    IgnoreDefaultProperties = true,
+    IgnoreDefaultProperties = false,  -- keep terrain data even if values match defaults
     SaveNotCreatable = true,
     
     IgnoreList = {
