@@ -4105,34 +4105,9 @@ end
 
 	if OPTIONS.ShowStatus then
 	local Status = CreateXELOStatus()
-	StatusText = Status.StatusText          -- ca să meargă codul vechi
-	GLOBAL_ENV._statustext = Status.Gui     -- ca să poată fi distrus mai târziu
+	StatusText = Status.StatusText                    -- important pentru codul vechi
+	GLOBAL_ENV._statustext = Status.Gui               -- pentru cleanup
 end
-		GLOBAL_ENV._statustext = StatusGui
-
-		StatusGui.DisplayOrder = 2e9
-		pcall(function() -- ? Compatibility with level 2
-			StatusGui.OnTopOfCoreBlur = true
-		end)
-
-		StatusText = Instance.new("TextLabel")
-
-		StatusText.Text = "Saving..."
-
-		StatusText.BackgroundTransparency = 1
-		StatusText.Font = Enum.Font.Code
-		StatusText.AnchorPoint = Vector2.new(1)
-		StatusText.Position = UDim2.new(1)
-		StatusText.Size = UDim2.new(0.3, 0, 0, 20)
-
-		StatusText.TextColor3 = Color3.new(1, 1, 1)
-		StatusText.TextScaled = true
-		StatusText.TextStrokeTransparency = 0.7
-		StatusText.TextXAlignment = Enum.TextXAlignment.Right
-		StatusText.TextYAlignment = Enum.TextYAlignment.Top
-
-		StatusText.Parent = StatusGui
-
 		local function randomString()
 			local length = math.random(10, 20)
 			local randomarray = table.create(length)
