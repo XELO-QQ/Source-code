@@ -2276,96 +2276,6 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 	if GLOBAL_ENV.USSI then
 		return
 	end
--- ====================== XELO PREMIUM STATUS ======================
-local function CreateXELOStatus()
-	local StatusGui = Instance.new("ScreenGui")
-	StatusGui.Name = "XELOStatus"
-	StatusGui.ResetOnSpawn = false
-	StatusGui.DisplayOrder = 2147483647
-
-	local Main = Instance.new("Frame")
-	Main.Size = UDim2.new(0, 400, 0, 130)
-	Main.Position = UDim2.new(1, -420, 0, 30)
-	Main.BackgroundColor3 = Color3.fromRGB(10, 10, 15)
-	Main.BorderSizePixel = 0
-	Main.Parent = StatusGui
-
-	local Corner = Instance.new("UICorner")
-	Corner.CornerRadius = UDim.new(0, 16)
-	Corner.Parent = Main
-
-	local Stroke = Instance.new("UIStroke")
-	Stroke.Color = Color3.fromRGB(0, 170, 255)
-	Stroke.Thickness = 2
-	Stroke.Parent = Main
-
-	-- Title
-	local Title = Instance.new("TextLabel")
-	Title.Size = UDim2.new(1, 0, 0, 35)
-	Title.BackgroundTransparency = 1
-	Title.Text = "XELO STEALER"
-	Title.TextColor3 = Color3.fromRGB(0, 170, 255)
-	Title.TextScaled = true
-	Title.Font = Enum.Font.GothamBold
-	Title.Parent = Main
-
-	-- Status
-	local StatusText = Instance.new("TextLabel")
-	StatusText.Name = "Status"
-	StatusText.Size = UDim2.new(1, -20, 0, 45)
-	StatusText.Position = UDim2.new(0, 10, 0, 40)
-	StatusText.BackgroundTransparency = 1
-	StatusText.Text = "Pregătire salvare..."
-	StatusText.TextColor3 = Color3.fromRGB(255, 255, 255)
-	StatusText.TextScaled = true
-	StatusText.Font = Enum.Font.GothamSemibold
-	StatusText.TextXAlignment = Enum.TextXAlignment.Left
-	StatusText.Parent = Main
-
-	-- Progress
-	local ProgressBG = Instance.new("Frame")
-	ProgressBG.Size = UDim2.new(1, -20, 0, 8)
-	ProgressBG.Position = UDim2.new(0, 10, 1, -28)
-	ProgressBG.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
-	ProgressBG.BorderSizePixel = 0
-	ProgressBG.Parent = Main
-
-	Instance.new("UICorner", ProgressBG).CornerRadius = UDim.new(1,0)
-
-	local ProgressBar = Instance.new("Frame")
-	ProgressBar.Size = UDim2.new(0, 0, 1, 0)
-	ProgressBar.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
-	ProgressBar.BorderSizePixel = 0
-	ProgressBar.Parent = ProgressBG
-
-	Instance.new("UICorner", ProgressBar).CornerRadius = UDim.new(1,0)
-
-	-- Size Label
-	local SizeLabel = Instance.new("TextLabel")
-	SizeLabel.Size = UDim2.new(0, 150, 0, 20)
-	SizeLabel.Position = UDim2.new(1, -160, 1, -25)
-	SizeLabel.BackgroundTransparency = 1
-	SizeLabel.Text = "0 KB"
-	SizeLabel.TextColor3 = Color3.fromRGB(170, 170, 170)
-	SizeLabel.TextScaled = true
-	SizeLabel.Font = Enum.Font.Gotham
-	SizeLabel.TextXAlignment = Enum.TextXAlignment.Right
-	SizeLabel.Parent = Main
-
-	-- Protect & Parent
-	if global_container.protectgui then
-		global_container.protectgui(StatusGui)
-	end
-	StatusGui.Parent = (global_container.gethui and global_container.gethui()) or game:GetService("CoreGui")
-
-	return {
-		StatusText = StatusText,
-		ProgressBar = ProgressBar,
-		SizeLabel = SizeLabel,
-		Gui = StatusGui
-	}
-end
-
 	GLOBAL_ENV.USSI = true
 	-- do -- ? Causes issues on SirHurt (Kick lacking Capability "Consequences"), let threads operate on their default/preferred identity set by the developers
 	-- 	local setthreadidentity = global_container.setthreadidentity
@@ -2384,7 +2294,7 @@ end
 
 	local OPTIONS = {
 		mode = "optimized",
-		Decompile = false,
+		Decompile = true,
 		scriptcache = true,
 		-- decomptype = "",
 		DecompileTimeout = 10,
@@ -4104,10 +4014,40 @@ end
 	end
 
 	if OPTIONS.ShowStatus then
-	local Status = CreateXELOStatus()
-	StatusText = Status.StatusText                    -- important pentru codul vechi
-	GLOBAL_ENV._statustext = Status.Gui               -- pentru cleanup
-end
+		do
+			local Exists = GLOBAL_ENV._statustext
+			if Exists then
+				Exists:Destroy()
+			end
+		end
+
+		local StatusGui = Instance.new("ScreenGui")
+
+		GLOBAL_ENV._statustext = StatusGui
+
+		StatusGui.DisplayOrder = 2e9
+		pcall(function() -- ? Compatibility with level 2
+			StatusGui.OnTopOfCoreBlur = true
+		end)
+
+		StatusText = Instance.new("TextLabel")
+
+		StatusText.Text = "Saving..."
+
+		StatusText.BackgroundTransparency = 1
+		StatusText.Font = Enum.Font.Code
+		StatusText.AnchorPoint = Vector2.new(1)
+		StatusText.Position = UDim2.new(1)
+		StatusText.Size = UDim2.new(0.3, 0, 0, 20)
+
+		StatusText.TextColor3 = Color3.new(1, 1, 1)
+		StatusText.TextScaled = true
+		StatusText.TextStrokeTransparency = 0.7
+		StatusText.TextXAlignment = Enum.TextXAlignment.Right
+		StatusText.TextYAlignment = Enum.TextYAlignment.Top
+
+		StatusText.Parent = StatusGui
+
 		local function randomString()
 			local length = math.random(10, 20)
 			local randomarray = table.create(length)
@@ -4272,7 +4212,7 @@ end
 						GLOBAL_ENV.bit32 = b32
 					end
 
-					-- Credits @daily3014 & @XoifaiI
+					-- Credits XELO 
 					local rbxcrypt_base64encode
 					pcall(function()
 						local b64_enc_buf = loadstring(
@@ -4387,7 +4327,7 @@ end
 synsaveinstance({
     mode = "full",                    -- full = salvează tot (recomandat pentru Terrain)
     Object = game,
-    Decompile = true,
+    Decompile = false,
     NilInstances = true,
     IgnoreSpecialProperties = false,  -- IMPORTANT pentru Terrain
     IgnoreDefaultProperties = false,  -- keep terrain data even if values match defaults
