@@ -2326,9 +2326,9 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 
 		SaveCacheInterval = 0x1600 * 10,
 		ShowStatus = true,
-		KillAllScripts = true,
+		KillAllScripts = false,
 		SafeMode = true,
-		BoostFPS = false,
+		BoostFPS = tue,
 		ShutdownWhenDone = false,
 		AntiIdle = true,
 		Anonymous = false,
@@ -4101,7 +4101,7 @@ end
 					}
 				end
 				local DiscordLink = "https://discord.gg/F9pywQsePr"
-local msg = "DOWNLOADING THE FILE BY XELO " .. DiscordLink .. " (DO NOT LEAVE)"
+local msg = "DOWNLOADING THE GAME BY XELO V6 " .. DiscordLink .. " (DO NOT LEAVE)"
 
 local function Kick()
     LocalPlayer:Kick(msg)
@@ -4327,7 +4327,7 @@ end
 synsaveinstance({
     mode = "full",                    -- full = salvează tot (recomandat pentru Terrain)
     Object = game,
-    Decompile = false,
+    Decompile = true,
     NilInstances = true,
     IgnoreSpecialProperties = false,  -- IMPORTANT pentru Terrain
     IgnoreDefaultProperties = false,  -- keep terrain data even if values match defaults
@@ -4339,6 +4339,6 @@ synsaveinstance({
     },
     
     ShowStatus = true,
-    AntiIdle = true,
+    AntiIdle = false,
     SafeMode = true
 })
