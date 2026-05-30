@@ -2986,7 +2986,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		if not OPTIONS.Decompile then
 			ldecompile = function()
 				return "-- Decompiling is disabled"
-			endz
+			end
 		elseif decompile then
 			local decomp = construct_TimeoutHandler(DecompileTimeout, decompile, "Decompiler timed out")
 
@@ -3030,7 +3030,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 				if ok then
     result = string.gsub(result, "\0", "\\0")
     
-    
+    -- Eliminăm header-ul Konstant (dacă există)
     result = result:gsub("%-%- Decompiled with Konstant V2%.1.-%-%- Time taken:.-seconds\r?\n?\r?\n?", "")
     result = result:gsub("%-%- Decompiled on %d%d%d%d%-%d%d%-%d%d .-[\r\n]+", "")
     result = result:gsub("%-%- Luau version %d+, Types version %d+.-[\r\n]+", "")
@@ -3627,7 +3627,7 @@ end
 											end
 										end
 
-										value = "-- Saved by XELO STEALER v6.0\n" ..
+										value = "-- Saved by XELO STEALER v5.0\n" ..
        "-- Stealed & Decompiled by Xelo\n" ..
        "-- Join for more uncopylocked games: " .. (DiscordLink or "https://discord.gg/F9pywQsePr") .. "\n\n" ..
        (hasLinkedSource and "-- Original Source: https://assetdelivery.roblox.com/v1/asset/?" .. (LinkedSource_type or "id") .. "=" .. (LinkedSource or LinkedSource_Url) .. "\n\n" or "")
@@ -3818,7 +3818,7 @@ end
 
 				if OPTIONS.ReadMe then
 			save_extra(
-				"IMPORTANT README! ",
+				"README",
 				nil,
 				nil,
 				"Script",
@@ -4101,7 +4101,7 @@ end
 					}
 				end
 				local DiscordLink = "https://discord.gg/F9pywQsePr"
-local msg = "THE GAME IS DOWNLOADING BY XELO STEALER V6 " .. DiscordLink .. " (DO NOT LEAVE)"
+local msg = "DOWNLOADING THE FILE BY XELO " .. DiscordLink .. " (DO NOT LEAVE)"
 
 local function Kick()
     LocalPlayer:Kick(msg)
@@ -4327,7 +4327,7 @@ end
 synsaveinstance({
     mode = "full",                    -- full = salvează tot (recomandat pentru Terrain)
     Object = game,
-    Decompile = true,
+    Decompile = false,
     NilInstances = true,
     IgnoreSpecialProperties = false,  -- IMPORTANT pentru Terrain
     IgnoreDefaultProperties = false,  -- keep terrain data even if values match defaults
