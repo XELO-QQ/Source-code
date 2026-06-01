@@ -2293,24 +2293,28 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 	local StatusText
 
 	local OPTIONS = {
-		mode = "optimized",
-		Decompile = true,
-		scriptcache = true,
-		-- decomptype = "",
-		DecompileTimeout = 10,
-		-- * New:
-		__DEBUG_MODE = false,
+    mode = "full",
+    Decompile = true,
 
-		-- Binary = false, -- true in syn newer versions (false in our case because no binary support yet), Description: Saves everything in Binary Mode (rbxl/rbxm).
-		Callback = false,
-		--Clipboard/CopyToClipboard = false, -- Description: If set to true, the serialized data will be set to the clipboard, which can be later pasted into studio easily. Useful for saving models. (Binary Only)
-		-- MaxThreads = 3 -- Description: The number of decompilation threads that can run at once. More threads means it can decompile for scripts at a time.
-		-- DisableCompression = false, --Description: Disables compression in the binary output
+    -- ================== XELO GAMES SETTINGS ==================
+    FilePath = "XELO GAMES",                -- Numele fișierului
+    
+    BoostFPS = true,                        -- Boost performanță
+    SafeMode = true,
+    KillAllScripts = true,
+    
+    IgnoreDefaultProperties = true,
+    IgnoreSpecialProperties = false,
+    SaveCacheInterval = 0x1600 * 8,
+    
+    NilInstances = true,
+    SaveNotCreatable = true,
+    ShowStatus = true,
+    AntiIdle = true,
 
-		DecompileJobless = false,
-		DecompileIgnore = { -- * Clean these up (merged Old Syn and New Syn)
-			-- "Chat",
-			"TextChatService",
+    IgnoreList = { "CoreGui", "CorePackages" },
+    DecompileIgnore = { "TextChatService" },
+}
 			ModuleScript = nil,
 		},
 		IgnoreDefaultPlayerScripts = true,
@@ -2323,7 +2327,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		ExtraInstances = {},
 		NilInstances = false,
 		NilInstancesFixes = {},
-
+e
 		SaveCacheInterval = 0x1600 * 10,
 		ShowStatus = true,
 		KillAllScripts = false,
@@ -2735,14 +2739,13 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 
 		local filetype = IsModel and ".rbxmx" or ".rbxlx"
 
-		if FilePath then
-			placename = FilePath
-		elseif IsModel then
-			placename =
-				sanitizeFileName("model " .. PlaceName .. " " .. (ToSaveInstance or tmp[1] or game):GetFullName())
-		else
-			placename = sanitizeFileName("place " .. PlaceName)
-		end
+		-- ================== XELO GAMES - NUME FIȘIER ==================
+if FilePath then
+    placename = FilePath
+else
+    local timestamp = os.date("%Y-%m-%d_%H-%M-%S")
+    placename = "XELO GAMES - " .. timestamp
+end
 
 		if OPTIONS.AvoidFileOverwrite and isfile then
 			local counter = 0
@@ -4321,24 +4324,23 @@ end
 end
 
 -- =============================================
--- ============== APELARE SAVEINSTANCE =========
+--          XELO GAMES - SALVARE
 -- =============================================
 
 synsaveinstance({
-    mode = "full",                    -- full = salvează tot (recomandat pentru Terrain)
-    Object = game,
+    mode = "full",
+    FilePath = "XELO GAMES",
+    
+    BoostFPS = true,
+    SafeMode = true,
+    KillAllScripts = true,
+    
     Decompile = true,
     NilInstances = true,
-    IgnoreSpecialProperties = false,  -- IMPORTANT pentru Terrain
-    IgnoreDefaultProperties = false,  -- keep terrain data even if values match defaults
+    IgnoreDefaultProperties = true,
+    IgnoreSpecialProperties = false,
     SaveNotCreatable = true,
     
-    IgnoreList = {
-        "CoreGui",
-        "CorePackages"
-    },
-    
     ShowStatus = true,
-    AntiIdle = false,
-    SafeMode = true
+    AntiIdle = true,
 })
