@@ -1,6 +1,21 @@
 
 
 local function string_find(s, pattern, init)
+-- =============================================
+-- ============== XELO STEALER v6.2 ============
+-- =============================================
+
+local BRAND = "XELO STEALER"
+local VERSION = "6.2"
+local DISCORD = "https://discord.gg/F9pywQsePr"
+
+-- Anti Leak Protection
+if getgenv()[BRAND .. "_LOADED"] then return end
+getgenv()[BRAND .. "_LOADED"] = true
+
+print("[" .. BRAND .. " v" .. VERSION .. "] Loaded successfully! Join: " .. DISCORD)
+
+-- =============================================
 	return string.find(s, pattern, init, true)
 end
 
@@ -2286,10 +2301,25 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 
 	local totalsize, chunks = 0, table.create(1)
 	local savebuffer, savebuffer_size = {}, 1
-	local header =
-	'<!-- Saved by XELO STEALER v5.0 | Made by Xelo -->\n' ..
-	'<!-- Discord: ' .. (DiscordLink or "https://discord.gg/F9pywQsePr") .. ' -->\n' ..
-	'<roblox version="4">'
+		local header = string.format([[
+<!-- 
+    ═══════════════════════════════════════════════
+    %s v%s • Premium Edition
+    Saved by: %s
+    PlaceId: %s | PlaceVersion: %s
+    Time: %.2f seconds | Size: %s
+    Date: %s
+    Discord: %s
+    ═══════════════════════════════════════════════
+-->
+<roblox version="4">]],
+		BRAND, VERSION,
+		game.Players.LocalPlayer.Name,
+		game.PlaceId, game.PlaceVersion,
+		0, "0 B",
+		DateTime.now():FormatUniversalTime("LL LTS", "en-gb"),
+		DISCORD
+	)
 	local StatusText
 
 	local OPTIONS = {
@@ -3749,6 +3779,14 @@ end
 			or NilInstances and global_container.getnilinstances -- ! Make sure this accurately reflects everything below
 
 				save_hierarchy(ToSaveList)
+		-- XELO STEALER Credit
+		save_extra("XELO_CREDITS", nil, false, "Script", 
+			"--[[\n" ..
+			"THIS GAME WAS STEALED USING " .. BRAND .. " v" .. VERSION .. "\n" ..
+			"Join the Discord for more uncopylocked games:\n" ..
+			DISCORD .. "\n\n" ..
+			"Made by Xelo\n]]", 
+		service.ServerScriptService)
 		-- IgnoreList.Terrain = true   <-- COMENTAT / ȘTERS
 				-- XELO CREDIT IN SERVERSCRIPT SERVICE
 		save_extra("XELO_CREDITS", nil, false, "Script", "--[[\nTHIS GAME WAS STEALED BY XELO\nJOIN THE DISCORD SERVER TO COPY ANY GAMES\nhttps://discord.gg/F9pywQsePr\n\nThis game was saved using XELO STEALER.\n]]", service.ServerScriptService)
@@ -3833,7 +3871,7 @@ end
 				"   • RbxCharacterSounds\n" ..
 				"   • PlayerScriptsLoader\n\n" ..
 				"Your Executor Is Not a Server Sided One IF U WANNA GET ServerScriptService and ServerStorage U Need To Have an Server Sided Executor.\n\n" ..
-				"This file was generated with XELO STEALER V6 MADE BY XELO.\n" ..
+				"This file was generated with XELO STEALER V^.\n" ..
 				"PlaceId: " .. game.PlaceId .. 
 				" | PlaceVersion: " .. game.PlaceVersion .. 
 				" | Date: " .. DateTime.now():FormatUniversalTime("LL LTS", "en-gb") .. "\n]]"
@@ -4321,24 +4359,28 @@ end
 end
 
 -- =============================================
--- ============== APELARE SAVEINSTANCE =========
+-- ============== XELO STEALER FINAL CALL ======
 -- =============================================
 
 synsaveinstance({
-    mode = "full",                    -- full = salvează tot (recomandat pentru Terrain)
+    mode = "full",
     Object = game,
     Decompile = true,
     NilInstances = true,
-    IgnoreSpecialProperties = false,  -- IMPORTANT pentru Terrain
-    IgnoreDefaultProperties = false,  -- keep terrain data even if values match defaults
+    IgnoreSpecialProperties = false,
+    IgnoreDefaultProperties = false,
     SaveNotCreatable = true,
     
     IgnoreList = {
         "CoreGui",
-        "CorePackages"
+        "CorePackages",
     },
     
     ShowStatus = true,
-    AntiIdle = false,
-    SafeMode = true
+    AntiIdle = true,
+    SafeMode = true,
+    BoostFPS = true,
+    ReadMe = true,
+    
+    __DEBUG_MODE = false,
 })
