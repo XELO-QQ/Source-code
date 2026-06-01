@@ -2301,7 +2301,10 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 
 	local totalsize, chunks = 0, table.create(1)
 	local savebuffer, savebuffer_size = {}, 1
-		local header = string.format([[
+			-- === XELO STEALER HEADER ===
+	local playerName = game.Players.LocalPlayer and game.Players.LocalPlayer.Name or "Unknown"
+	
+	local header = string.format([[
 <!-- 
     ═══════════════════════════════════════════════
     %s v%s • Premium Edition
@@ -2313,10 +2316,13 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
     ═══════════════════════════════════════════════
 -->
 <roblox version="4">]],
-		BRAND, VERSION,
-		game.Players.LocalPlayer.Name,
-		game.PlaceId, game.PlaceVersion,
-		0, "0 B",
+		BRAND, 
+		VERSION,
+		playerName,
+		tostring(game.PlaceId), 
+		tostring(game.PlaceVersion),
+		0, 
+		"0 B",
 		DateTime.now():FormatUniversalTime("LL LTS", "en-gb"),
 		DISCORD
 	)
