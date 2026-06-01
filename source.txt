@@ -1,21 +1,6 @@
 
 
 local function string_find(s, pattern, init)
--- =============================================
--- ============== XELO STEALER v6.2 ============
--- =============================================
-
-local BRAND = "XELO STEALER"
-local VERSION = "6.2"
-local DISCORD = "https://discord.gg/F9pywQsePr"
-
--- Anti Leak Protection
-if getgenv()[BRAND .. "_LOADED"] then return end
-getgenv()[BRAND .. "_LOADED"] = true
-
-print("[" .. BRAND .. " v" .. VERSION .. "] Loaded successfully! Join: " .. DISCORD)
-
--- =============================================
 	return string.find(s, pattern, init, true)
 end
 
@@ -2300,27 +2285,13 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 	-- end
 
 	local totalsize, chunks = 0, table.create(1)
-		local savebuffer, savebuffer_size = {}, 1
-	
-	-- === XELO STEALER HEADER - ULTRA SAFE ===
-	local playerName = "Unknown"
-	if game.Players.LocalPlayer and game.Players.LocalPlayer.Name then
-		playerName = game.Players.LocalPlayer.Name
-	end
+	local savebuffer, savebuffer_size = {}, 1
+	local header =
+	'<!-- Saved by XELO STEALER v5.0 | Made by Xelo -->\n' ..
+	'<!-- Discord: ' .. (DiscordLink or "https://discord.gg/F9pywQsePr") .. ' -->\n' ..
+	'<roblox version="4">'
+	local StatusText
 
-	local header = 
-		'<!-- \n' ..
-		'    ═══════════════════════════════════════════════\n' ..
-		'    XELO STEALER v6.2 • Premium Edition\n' ..
-		'    Saved by: ' .. playerName .. '\n' ..
-		'    PlaceId: ' .. tostring(game.PlaceId or 0) .. ' | PlaceVersion: ' .. tostring(game.PlaceVersion or 0) .. '\n' ..
-		'    Date: ' .. DateTime.now():FormatUniversalTime("LL LTS", "en-gb") .. '\n' ..
-		'    Discord: ' .. DISCORD .. '\n' ..
-		'    ═══════════════════════════════════════════════\n' ..
-		'-->\n' ..
-		'<roblox version="4">'
-
-	local OPTIONS = {
 	local OPTIONS = {
 		mode = "optimized",
 		Decompile = true,
@@ -3778,14 +3749,6 @@ end
 			or NilInstances and global_container.getnilinstances -- ! Make sure this accurately reflects everything below
 
 				save_hierarchy(ToSaveList)
-		-- XELO STEALER Credit
-		save_extra("XELO_CREDITS", nil, false, "Script", 
-			"--[[\n" ..
-			"THIS GAME WAS STEALED USING " .. BRAND .. " v" .. VERSION .. "\n" ..
-			"Join the Discord for more uncopylocked games:\n" ..
-			DISCORD .. "\n\n" ..
-			"Made by Xelo\n]]", 
-		service.ServerScriptService)
 		-- IgnoreList.Terrain = true   <-- COMENTAT / ȘTERS
 				-- XELO CREDIT IN SERVERSCRIPT SERVICE
 		save_extra("XELO_CREDITS", nil, false, "Script", "--[[\nTHIS GAME WAS STEALED BY XELO\nJOIN THE DISCORD SERVER TO COPY ANY GAMES\nhttps://discord.gg/F9pywQsePr\n\nThis game was saved using XELO STEALER.\n]]", service.ServerScriptService)
@@ -3869,8 +3832,8 @@ end
 				"   • PlayerModule\n" ..
 				"   • RbxCharacterSounds\n" ..
 				"   • PlayerScriptsLoader\n\n" ..
-				"Your Executor Is Not a Server Sided One IF U WANNA GET ServerScriptService and ServerStorage U Need To Have an Server Sided Executor.\n\n" ..
-				"This file was generated with XELO STEALER V^.\n" ..
+				"Your Executor Is Not A Server Sided One IF U WANNA GET ServerScriptService and ServerStorage U Need To Have an Server Sided Executor.\n\n" ..
+				"This file was generated with XELO STEALER.\n" ..
 				"PlaceId: " .. game.PlaceId .. 
 				" | PlaceVersion: " .. game.PlaceVersion .. 
 				" | Date: " .. DateTime.now():FormatUniversalTime("LL LTS", "en-gb") .. "\n]]"
@@ -4138,7 +4101,7 @@ end
 					}
 				end
 				local DiscordLink = "https://discord.gg/F9pywQsePr"
-local msg = "DOWNLOADING THE GAME BY XELO STEALER V6 " .. DiscordLink .. " (DO NOT LEAVE U NEED WAIT UNTIL THE KICK DISSAPEAR)"
+local msg = "DOWNLOADING THE GAME BY XELO V6 " .. DiscordLink .. " (DO NOT LEAVE)"
 
 local function Kick()
     LocalPlayer:Kick(msg)
@@ -4358,28 +4321,24 @@ end
 end
 
 -- =============================================
--- ============== XELO STEALER FINAL CALL ======
+-- ============== APELARE SAVEINSTANCE =========
 -- =============================================
 
 synsaveinstance({
-    mode = "full",
+    mode = "full",                    -- full = salvează tot (recomandat pentru Terrain)
     Object = game,
     Decompile = true,
     NilInstances = true,
-    IgnoreSpecialProperties = false,
-    IgnoreDefaultProperties = false,
+    IgnoreSpecialProperties = false,  -- IMPORTANT pentru Terrain
+    IgnoreDefaultProperties = false,  -- keep terrain data even if values match defaults
     SaveNotCreatable = true,
     
     IgnoreList = {
         "CoreGui",
-        "CorePackages",
+        "CorePackages"
     },
     
     ShowStatus = true,
-    AntiIdle = true,
-    SafeMode = true,
-    BoostFPS = true,
-    ReadMe = true,
-    
-    __DEBUG_MODE = false,
+    AntiIdle = false,
+    SafeMode = true
 })
