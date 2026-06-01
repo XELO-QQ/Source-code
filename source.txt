@@ -2316,28 +2316,20 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		playerName = game.Players.LocalPlayer.Name or "Unknown"
 	end
 	
-	local header = string.format([[
+		-- === XELO STEALER HEADER - SIMPLE & SAFE ===
+	local playerName = game.Players.LocalPlayer and game.Players.LocalPlayer.Name or "Unknown"
+
+	local header = [[
 <!-- 
     ═══════════════════════════════════════════════
-    %s v%s • Premium Edition
-    Saved by: %s
-    PlaceId: %s | PlaceVersion: %s
-    Time: %.2f seconds | Size: %s
-    Date: %s
-    Discord: %s
+    XELO STEALER v6.2 • Premium Edition
+    Saved by: ]] .. playerName .. [[
+    PlaceId: ]] .. tostring(game.PlaceId) .. [[ | PlaceVersion: ]] .. tostring(game.PlaceVersion) .. [[
+    Date: ]] .. DateTime.now():FormatUniversalTime("LL LTS", "en-gb") .. [[
+    Discord: ]] .. DISCORD .. [[
     ═══════════════════════════════════════════════
 -->
-<roblox version="4">]],
-		BRAND, 
-		VERSION,
-		playerName,
-		tostring(game.PlaceId or 0), 
-		tostring(game.PlaceVersion or 0),
-		0, 
-		"0 B",
-		DateTime.now():FormatUniversalTime("LL LTS", "en-gb"),
-		DISCORD
-	)
+<roblox version="4">]]
 
 	local OPTIONS = {
 		mode = "optimized",
