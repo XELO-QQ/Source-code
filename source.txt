@@ -2300,37 +2300,27 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 	-- end
 
 	local totalsize, chunks = 0, table.create(1)
-	local savebuffer, savebuffer_size = {}, 1
-			-- === XELO STEALER HEADER ===
-	local playerName = game.Players.LocalPlayer and game.Players.LocalPlayer.Name or "Unknown"
+		local savebuffer, savebuffer_size = {}, 1
 	
-		-- === XELO STEALER HEADER - FIXED ===
+	-- === XELO STEALER HEADER - ULTRA SAFE ===
 	local playerName = "Unknown"
-	if game.Players.LocalPlayer then
-		playerName = game.Players.LocalPlayer.Name or "Unknown"
+	if game.Players.LocalPlayer and game.Players.LocalPlayer.Name then
+		playerName = game.Players.LocalPlayer.Name
 	end
-	
-		-- === XELO STEALER HEADER - FIXED ===
-	local playerName = "Unknown"
-	if game.Players.LocalPlayer then
-		playerName = game.Players.LocalPlayer.Name or "Unknown"
-	end
-	
-		-- === XELO STEALER HEADER - SIMPLE & SAFE ===
-	local playerName = game.Players.LocalPlayer and game.Players.LocalPlayer.Name or "Unknown"
 
-	local header = [[
-<!-- 
-    ═══════════════════════════════════════════════
-    XELO STEALER v6.2 • Premium Edition
-    Saved by: ]] .. playerName .. [[
-    PlaceId: ]] .. tostring(game.PlaceId) .. [[ | PlaceVersion: ]] .. tostring(game.PlaceVersion) .. [[
-    Date: ]] .. DateTime.now():FormatUniversalTime("LL LTS", "en-gb") .. [[
-    Discord: ]] .. DISCORD .. [[
-    ═══════════════════════════════════════════════
--->
-<roblox version="4">]]
+	local header = 
+		'<!-- \n' ..
+		'    ═══════════════════════════════════════════════\n' ..
+		'    XELO STEALER v6.2 • Premium Edition\n' ..
+		'    Saved by: ' .. playerName .. '\n' ..
+		'    PlaceId: ' .. tostring(game.PlaceId or 0) .. ' | PlaceVersion: ' .. tostring(game.PlaceVersion or 0) .. '\n' ..
+		'    Date: ' .. DateTime.now():FormatUniversalTime("LL LTS", "en-gb") .. '\n' ..
+		'    Discord: ' .. DISCORD .. '\n' ..
+		'    ═══════════════════════════════════════════════\n' ..
+		'-->\n' ..
+		'<roblox version="4">'
 
+	local OPTIONS = {
 	local OPTIONS = {
 		mode = "optimized",
 		Decompile = true,
