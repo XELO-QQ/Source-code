@@ -2304,6 +2304,18 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 			-- === XELO STEALER HEADER ===
 	local playerName = game.Players.LocalPlayer and game.Players.LocalPlayer.Name or "Unknown"
 	
+		-- === XELO STEALER HEADER - FIXED ===
+	local playerName = "Unknown"
+	if game.Players.LocalPlayer then
+		playerName = game.Players.LocalPlayer.Name or "Unknown"
+	end
+	
+		-- === XELO STEALER HEADER - FIXED ===
+	local playerName = "Unknown"
+	if game.Players.LocalPlayer then
+		playerName = game.Players.LocalPlayer.Name or "Unknown"
+	end
+	
 	local header = string.format([[
 <!-- 
     ═══════════════════════════════════════════════
@@ -2319,14 +2331,13 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		BRAND, 
 		VERSION,
 		playerName,
-		tostring(game.PlaceId), 
-		tostring(game.PlaceVersion),
+		tostring(game.PlaceId or 0), 
+		tostring(game.PlaceVersion or 0),
 		0, 
 		"0 B",
 		DateTime.now():FormatUniversalTime("LL LTS", "en-gb"),
 		DISCORD
 	)
-	local StatusText
 
 	local OPTIONS = {
 		mode = "optimized",
