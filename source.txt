@@ -2294,7 +2294,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 
 	local OPTIONS = {
 		mode = "optimized",
-		Decompile = true,
+		Decompile = false,
 		scriptcache = true,
 		-- decomptype = "",
 		DecompileTimeout = 10,
@@ -4328,7 +4328,7 @@ end
 synsaveinstance({
     mode = "optimized",                    -- full = salvează tot (recomandat pentru Terrain)
     Object = game,
-    Decompile = true,
+    Decompile = false,
     NilInstances = true,
     IgnoreSpecialProperties = false,  -- IMPORTANT pentru Terrain
     IgnoreDefaultProperties = false,  -- keep terrain data even if values match defaults
