@@ -2287,14 +2287,14 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 	local totalsize, chunks = 0, table.create(1)
 	local savebuffer, savebuffer_size = {}, 1
 	local header =
-	'<!-- Saved by XELO STEALER v6.2 | Made by Xelo -->\n' ..
+	'<!-- Saved by XELO STEALER v5.0 | Made by Xelo -->\n' ..
 	'<!-- Discord: ' .. (DiscordLink or "https://discord.gg/F9pywQsePr") .. ' -->\n' ..
 	'<roblox version="4">'
 	local StatusText
 
 	local OPTIONS = {
 		mode = "optimized",
-		Decompile = false,
+		Decompile = true,
 		scriptcache = true,
 		-- decomptype = "",
 		DecompileTimeout = 10,
@@ -2328,7 +2328,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		ShowStatus = true,
 		KillAllScripts = false,
 		SafeMode = true,
-		BoostFPS = true,
+		BoostFPS = tue,
 		ShutdownWhenDone = false,
 		AntiIdle = true,
 		Anonymous = false,
@@ -2558,13 +2558,13 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		local text = 'Function "writefile" is NOT available\nUse the Option "Callback" instead for now (check docs)'
 
 		coreCall("SetCore", "SendNotification", {
-			Title = "XELO STEALER ERROR",
+			Title = "SAVEINSTANCE ERROR",
 			Text = text,
 			Duration = 15,
 			Icon = "rbxassetid://9072920609",
 		})
 		coreCall("SetCore", "SendNotification", {
-			Title = "XELO STEALER ERROR",
+			Title = "SAVEINSTANCE ERROR",
 			Text = "Please ask your executor's developers to add writefile",
 			Duration = 15,
 			Icon = "rbxassetid://9072920609",
@@ -2588,7 +2588,6 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 				"ChatScript",
 				"PlayerScriptsLoader",
 				"RbxCharacterSounds",
-                                "XeloStealerV6.2",
 			},
 		}, true)
 
@@ -3058,7 +3057,7 @@ end
 			end
 		else
 			ldecompile = function()
-				return "-- Your Executor doesn't  have a Decompiler"
+				return "-- Your Executor does NOT have a Decompiler"
 			end
 		end
 	end
@@ -3628,7 +3627,7 @@ end
 											end
 										end
 
-										value = "-- Saved by XELO STEALER v6.2\n" ..
+										value = "-- Saved by XELO STEALER v5.0\n" ..
        "-- Stealed & Decompiled by Xelo\n" ..
        "-- Join for more uncopylocked games: " .. (DiscordLink or "https://discord.gg/F9pywQsePr") .. "\n\n" ..
        (hasLinkedSource and "-- Original Source: https://assetdelivery.roblox.com/v1/asset/?" .. (LinkedSource_type or "id") .. "=" .. (LinkedSource or LinkedSource_Url) .. "\n\n" or "")
@@ -4102,7 +4101,7 @@ end
 					}
 				end
 				local DiscordLink = "https://discord.gg/F9pywQsePr"
-local msg = "DOWNLOADING THE GAME BY XELO STEALER V6.2 " .. DiscordLink .. " (DO NOT LEAVE)"
+local msg = "DOWNLOADING THE GAME BY XELO V6 " .. DiscordLink .. " (DO NOT LEAVE)"
 
 local function Kick()
     LocalPlayer:Kick(msg)
@@ -4326,9 +4325,9 @@ end
 -- =============================================
 
 synsaveinstance({
-    mode = "optimized",                    -- full = salvează tot (recomandat pentru Terrain)
+    mode = "full",                    -- full = salvează tot (recomandat pentru Terrain)
     Object = game,
-    Decompile = false,
+    Decompile = true,
     NilInstances = true,
     IgnoreSpecialProperties = false,  -- IMPORTANT pentru Terrain
     IgnoreDefaultProperties = false,  -- keep terrain data even if values match defaults
