@@ -4328,14 +4328,15 @@ local function SaveTerrainBackupForSaveInstance()
     local terrain = workspace:FindFirstChildOfClass("Terrain")
     if not terrain then return end
     local HttpService = game:GetService("HttpService")
-
     local resolution = 4
+
     local minExtents = terrain.MinExtents
     local maxExtents = terrain.MaxExtents
     if not minExtents or not maxExtents then
-        local extent = 256
-        minExtents = Vector3.new(-extent, 0, -extent)
-        maxExtents = Vector3.new(extent, 256, extent)
+        local horizontalExtent = 512
+        local verticalExtent = 256
+        minExtents = Vector3.new(-horizontalExtent, -verticalExtent, -horizontalExtent)
+        maxExtents = Vector3.new(horizontalExtent, verticalExtent, horizontalExtent)
     end
 
     local region = Region3.new(minExtents, maxExtents):ExpandToGrid(resolution)
@@ -4364,50 +4365,72 @@ local function SaveTerrainBackupForSaveInstance()
         occupancies = flatOccupancies,
     }
 
-    local storage = game:GetService("ServerStorage")
-    if storage:FindFirstChild("XELO_TERRAIN_DATA") then
-        storage.XELO_TERRAIN_DATA:Destroy()
-    end
-    local terrainModule = Instance.new("ModuleScript")
-    terrainModule.Name = "XELO_TERRAIN_DATA"
-    terrainModule.Source = "return " .. string.format("%q", HttpService:JSONEncode(data))
-    terrainModule.Parent = storage
+    local function createBackupFolder(parent)
+        if not parent then return end
+        local folder = parent:FindFirstChild("XELO_TERRAIN_BACKUP")
+        if folder then
+            folder:Destroy()
+        end
+        folder = Instance.new("Folder")
+        folder.Name = "XELO_TERRAIN_BACKUP"
+        folder.Parent = parent
 
-    local sss = game:GetService("ServerScriptService")
-    if sss:FindFirstChild("XELO_TERRAIN_RESTORE") then
-        sss.XELO_TERRAIN_RESTORE:Destroy()
+        local terrainModule = Instance.new("ModuleScript")
+        terrainModule.Name = "XELO_TERRAIN_DATA"
+        terrainModule.Source = "return " .. string.format("%q", HttpService:JSONEncode(data))
+        terrainModule.Parent = folder
+
+        local restoreScript = Instance.new("Script")
+        restoreScript.Name = "XELO_TERRAIN_RESTORE"
+        restoreScript.Source = table.concat({
+            'local HttpService = game:GetService("HttpService")',
+            'local backup = script.Parent',
+            'if not backup or backup.Name ~= "XELO_TERRAIN_BACKUP" then',
+            '    backup = workspace:FindFirstChild("XELO_TERRAIN_BACKUP")',
+            'end',
+            'if not backup then',
+            '    local ok, ss = pcall(function() return game:GetService("ServerStorage") end)',
+            '    if ok then backup = ss:FindFirstChild("XELO_TERRAIN_BACKUP") end',
+            'end',
+            'if not backup then return end',
+            'local terrainData = HttpService:JSONDecode(require(backup:WaitForChild("XELO_TERRAIN_DATA")))',
+            'local Terrain = workspace:WaitForChild("Terrain")',
+            'Terrain:Clear()',
+            'local region = Region3.new(',
+            '    Vector3.new(terrainData.regionMin.x, terrainData.regionMin.y, terrainData.regionMin.z),',
+            '    Vector3.new(terrainData.regionMax.x, terrainData.regionMax.y, terrainData.regionMax.z)',
+            '):ExpandToGrid(terrainData.resolution)',
+            'local size = terrainData.size',
+            'local materials = {}',
+            'local occupancies = {}',
+            'for x = 1, size.x do',
+            '    materials[x] = {}',
+            '    occupancies[x] = {}',
+            '    for y = 1, size.y do',
+            '        materials[x][y] = {}',
+            '        occupancies[x][y] = {}',
+            '        for z = 1, size.z do',
+            '            local index = ((x - 1) * size.y + (y - 1)) * size.z + z',
+            '            materials[x][y][z] = Enum.Material[terrainData.materials[index]] or Enum.Material.Air',
+            '            occupancies[x][y][z] = terrainData.occupancies[index] or 0',
+            '        end',
+            '    end',
+            'end',
+            'Terrain:WriteVoxels(region, terrainData.resolution, materials, occupancies)',
+            'print("XELO: Terrain imported automatically.")',
+        }, "\n")
+        restoreScript.Parent = folder
     end
-    local restoreScript = Instance.new("Script")
-    restoreScript.Name = "XELO_TERRAIN_RESTORE"
-    restoreScript.Source = table.concat({
-        'local HttpService = game:GetService("HttpService")',
-        'local terrainData = HttpService:JSONDecode(require(game:GetService("ServerStorage"):WaitForChild("XELO_TERRAIN_DATA")))',
-        'local Terrain = workspace:WaitForChild("Terrain")',
-        'Terrain:Clear()',
-        'local region = Region3.new(',
-        '    Vector3.new(terrainData.regionMin.x, terrainData.regionMin.y, terrainData.regionMin.z),',
-        '    Vector3.new(terrainData.regionMax.x, terrainData.regionMax.y, terrainData.regionMax.z)',
-        '):ExpandToGrid(terrainData.resolution)',
-        'local size = terrainData.size',
-        'local materials = {}',
-        'local occupancies = {}',
-        'for x = 1, size.x do',
-        '    materials[x] = {}',
-        '    occupancies[x] = {}',
-        '    for y = 1, size.y do',
-        '        materials[x][y] = {}',
-        '        occupancies[x][y] = {}',
-        '        for z = 1, size.z do',
-        '            local index = ((x - 1) * size.y + (y - 1)) * size.z + z',
-        '            materials[x][y][z] = Enum.Material[terrainData.materials[index]] or Enum.Material.Air',
-        '            occupancies[x][y][z] = terrainData.occupancies[index] or 0',
-        '        end',
-        '    end',
-        'end',
-        'Terrain:WriteVoxels(region, terrainData.resolution, materials, occupancies)',
-        'print("XELO: Terrain imported automatically.")',
-    }, "\n")
-    restoreScript.Parent = sss
+
+    pcall(function()
+        createBackupFolder(workspace)
+    end)
+    pcall(function()
+        createBackupFolder(game:GetService("ServerStorage"))
+    end)
+    pcall(function()
+        createBackupFolder(game:GetService("ServerScriptService"))
+    end)
 end
 
 pcall(SaveTerrainBackupForSaveInstance)
