@@ -4330,8 +4330,18 @@ local function SaveTerrainBackupForSaveInstance()
     local HttpService = game:GetService("HttpService")
     local resolution = 4
 
-    local minExtents = terrain.MinExtents
-    local maxExtents = terrain.MaxExtents
+    local minExtents, maxExtents
+    if terrain.MinExtents and terrain.MaxExtents then
+        minExtents = terrain.MinExtents
+        maxExtents = terrain.MaxExtents
+    elseif gethiddenproperty then
+        local ok1, hiddenMin = pcall(gethiddenproperty, terrain, "MinExtents")
+        local ok2, hiddenMax = pcall(gethiddenproperty, terrain, "MaxExtents")
+        if ok1 and ok2 and hiddenMin and hiddenMax then
+            minExtents = hiddenMin
+            maxExtents = hiddenMax
+        end
+    end
     if not minExtents or not maxExtents then
         local horizontalExtent = 512
         local verticalExtent = 256
