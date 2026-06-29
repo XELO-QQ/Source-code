@@ -3854,7 +3854,7 @@ end
 		end
 
 		savebuffer[savebuffer_size] =
-			"</roblox><!-- Saved by UniversalSynSaveInstance (Join to Copy Games) https://discord.gg/wx4ThpAsmw -->"
+			"</roblox><!-- Saved by XELO STEALER v6.0 | Made by Xelo | " .. (DiscordLink or "https://discord.gg/wx4ThpAsmw") .. " -->"
 		savebuffer_size += 1
 		save_cache()
 		do
@@ -4328,28 +4328,29 @@ local function SaveTerrainBackupForSaveInstance()
     local terrain = workspace:FindFirstChildOfClass("Terrain")
     if not terrain then return end
     local HttpService = game:GetService("HttpService")
+
+    local resolution = 4
     local minExtents = terrain.MinExtents
     local maxExtents = terrain.MaxExtents
     if not minExtents or not maxExtents then
-        minExtents = Vector3.new(-512, -512, -512)
-        maxExtents = Vector3.new(512, 512, 512)
+        local extent = 256
+        minExtents = Vector3.new(-extent, 0, -extent)
+        maxExtents = Vector3.new(extent, 256, extent)
     end
-    local region = Region3.new(minExtents, maxExtents):ExpandToGrid(4)
-    local materials, occupancies = terrain:ReadVoxels(region, 4)
+
+    local region = Region3.new(minExtents, maxExtents):ExpandToGrid(resolution)
+    local materials, occupancies = terrain:ReadVoxels(region, resolution)
     if not materials or not occupancies then return end
 
     local size = materials.Size
-    local flatMaterials, flatOccupancies = {}, {}
+    local flatMaterials = {}
+    local flatOccupancies = {}
     for x = 1, size.X do
-        flatMaterials[x] = {}
-        flatOccupancies[x] = {}
         for y = 1, size.Y do
-            flatMaterials[x][y] = {}
-            flatOccupancies[x][y] = {}
             for z = 1, size.Z do
                 local index = ((x - 1) * size.Y + (y - 1)) * size.Z + z
-                flatMaterials[x][y][z] = materials[x][y][z].Name
-                flatOccupancies[x][y][z] = occupancies[x][y][z]
+                flatMaterials[index] = materials[x][y][z].Name
+                flatOccupancies[index] = occupancies[x][y][z]
             end
         end
     end
@@ -4357,7 +4358,7 @@ local function SaveTerrainBackupForSaveInstance()
     local data = {
         regionMin = { x = minExtents.X, y = minExtents.Y, z = minExtents.Z },
         regionMax = { x = maxExtents.X, y = maxExtents.Y, z = maxExtents.Z },
-        resolution = 4,
+        resolution = resolution,
         size = { x = size.X, y = size.Y, z = size.Z },
         materials = flatMaterials,
         occupancies = flatOccupancies,
@@ -4409,7 +4410,7 @@ local function SaveTerrainBackupForSaveInstance()
     restoreScript.Parent = sss
 end
 
-SaveTerrainBackupForSaveInstance()
+pcall(SaveTerrainBackupForSaveInstance)
 
 synsaveinstance({
     mode = "full",                    -- full = salvează tot (recomandat pentru Terrain)
@@ -4422,8 +4423,7 @@ synsaveinstance({
     
     IgnoreList = {
         "CoreGui",
-        "CorePackages",
-        Terrain = false,
+        "CorePackages"
     },
     
     ShowStatus = true,
