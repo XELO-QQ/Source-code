@@ -4328,7 +4328,13 @@ local function SaveTerrainBackupForSaveInstance()
     local terrain = workspace:FindFirstChildOfClass("Terrain")
     if not terrain then return end
     local HttpService = game:GetService("HttpService")
-    local region = Region3.new(terrain.MinExtents, terrain.MaxExtents):ExpandToGrid(4)
+    local minExtents = terrain.MinExtents
+    local maxExtents = terrain.MaxExtents
+    if not minExtents or not maxExtents then
+        minExtents = Vector3.new(-512, -512, -512)
+        maxExtents = Vector3.new(512, 512, 512)
+    end
+    local region = Region3.new(minExtents, maxExtents):ExpandToGrid(4)
     local materials, occupancies = terrain:ReadVoxels(region, 4)
     if not materials or not occupancies then return end
 
@@ -4349,8 +4355,8 @@ local function SaveTerrainBackupForSaveInstance()
     end
 
     local data = {
-        regionMin = { x = terrain.MinExtents.X, y = terrain.MinExtents.Y, z = terrain.MinExtents.Z },
-        regionMax = { x = terrain.MaxExtents.X, y = terrain.MaxExtents.Y, z = terrain.MaxExtents.Z },
+        regionMin = { x = minExtents.X, y = minExtents.Y, z = minExtents.Z },
+        regionMax = { x = maxExtents.X, y = maxExtents.Y, z = maxExtents.Z },
         resolution = 4,
         size = { x = size.X, y = size.Y, z = size.Z },
         materials = flatMaterials,
