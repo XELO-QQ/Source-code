@@ -2395,6 +2395,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 			SaveNonCreatable = "SaveNotCreatable",
 			SavePlayers = "IsolatePlayers",
 			SaveCharacters = "SavePlayerCharacters",
+			KeepReadme = "ReadMe",
 		},
 		OptionsAliasesInverse = {
 			noscripts = "Decompile",
