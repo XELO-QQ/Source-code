@@ -4449,8 +4449,6 @@ synsaveinstance({
         "CoreGui",
         "CorePackages"
     }
-})
-
     
     ShowStatus = true,
     AntiIdle = false,
