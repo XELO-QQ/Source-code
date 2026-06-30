@@ -4320,99 +4320,92 @@ end
 	end
 end
 
--- =============================================
--- ============== APELARE SAVEINSTANCE =========
--- =============================================
-
+-- ============================================================================
+-- MODIFICARE: Salvarea automată a Terrain-ului prin ReadVoxels și serializare JSON
+-- ============================================================================
 local function SaveTerrainBackupForSaveInstance()
-    local terrain = workspace:FindFirstChildOfClass("Terrain")
-    if not terrain then return end
+    local Terrain = workspace:FindFirstChildOfClass("Terrain")
+    if not Terrain then return end
+
     local HttpService = game:GetService("HttpService")
-    local resolution = 4
-
-    local minExtents, maxExtents
-    if terrain.MinExtents and terrain.MaxExtents then
-        minExtents = terrain.MinExtents
-        maxExtents = terrain.MaxExtents
-    elseif gethiddenproperty then
-        local ok1, hiddenMin = pcall(gethiddenproperty, terrain, "MinExtents")
-        local ok2, hiddenMax = pcall(gethiddenproperty, terrain, "MaxExtents")
-        if ok1 and ok2 and hiddenMin and hiddenMax then
-            minExtents = hiddenMin
-            maxExtents = hiddenMax
-        end
+    
+    -- Pasul 1: Citirea datelor voxel utilizând ReadVoxels din Workspace.Terrain
+    local region = Terrain.MaxRegions
+    if not region then
+        -- Alternativă în cazul în care MaxRegions nu este direct accesibil
+        region = Region3.new(Vector3.new(-3000, -500, -3000), Vector3.new(3000, 500, 3000))
     end
-    if not minExtents or not maxExtents then
-        local horizontalExtent = 512
-        local verticalExtent = 256
-        minExtents = Vector3.new(-horizontalExtent, -verticalExtent, -horizontalExtent)
-        maxExtents = Vector3.new(horizontalExtent, verticalExtent, horizontalExtent)
-    end
+    region = region:ExpandToGrid(4)
 
-    local region = Region3.new(minExtents, maxExtents):ExpandToGrid(resolution)
-    local materials, occupancies = terrain:ReadVoxels(region, resolution)
-    if not materials or not occupancies then return end
+    local successRead, materials, occupancies = pcall(function()
+        return Terrain:ReadVoxels(region, 4)
+    end)
+
+    if not successRead or not materials then 
+        warn("XELO: Nu s-au putut citi voxelii din Terrain.")
+        return 
+    end
 
     local size = materials.Size
-    local flatMaterials = {}
-    local flatOccupancies = {}
+    local terrainData = {
+        resolution = 4,
+        regionMin = {region.CFrame.Position.X - region.Size.X/2, region.CFrame.Position.Y - region.Size.Y/2, region.CFrame.Position.Z - region.Size.Z/2},
+        regionSize = {region.Size.X, region.Size.Y, region.Size.Z},
+        size = {x = size.X, y = size.Y, z = size.Z},
+        materials = {},
+        occupancies = {}
+    }
+
+    -- Pasul 2: Transformarea matricilor imbricate 3D într-un format de tabel Luau liniar (1D)
     for x = 1, size.X do
         for y = 1, size.Y do
             for z = 1, size.Z do
-                local index = ((x - 1) * size.Y + (y - 1)) * size.Z + z
-                flatMaterials[index] = materials[x][y][z].Name
-                flatOccupancies[index] = occupancies[x][y][z]
+                local mat = materials[x][y][z]
+                local occ = occupancies[x][y][z]
+                
+                table.insert(terrainData.materials, mat.Name)
+                table.insert(terrainData.occupancies, occ)
             end
         end
     end
 
-    local data = {
-        regionMin = { x = minExtents.X, y = minExtents.Y, z = minExtents.Z },
-        regionMax = { x = maxExtents.X, y = maxExtents.Y, z = maxExtents.Z },
-        resolution = resolution,
-        size = { x = size.X, y = size.Y, z = size.Z },
-        materials = flatMaterials,
-        occupancies = flatOccupancies,
-    }
+    -- Convertesterea tabelului Luau într-un șir de text JSON
+    local jsonText = HttpService:JSONEncode(terrainData)
 
+    -- Crearea unui folder de backup în joc pentru ca scriptul de restaurare să fie exportat odată cu harta
     local function createBackupFolder(parent)
-        if not parent then return end
-        local folder = parent:FindFirstChild("XELO_TERRAIN_BACKUP")
-        if folder then
-            folder:Destroy()
+        local folder = parent:FindFirstChild("TerrainBackupFolder")
+        if not folder then
+            folder = Instance.new("Folder")
+            folder.Name = "TerrainBackupFolder"
         end
-        folder = Instance.new("Folder")
-        folder.Name = "XELO_TERRAIN_BACKUP"
-        folder.Parent = parent
 
-        local terrainModule = Instance.new("ModuleScript")
-        terrainModule.Name = "XELO_TERRAIN_DATA"
-        terrainModule.Source = "return " .. string.format("%q", HttpService:JSONEncode(data))
-        terrainModule.Parent = folder
+        -- Salvăm datele JSON într-o proprietate StringValue în interiorul jocului
+        local dataStore = folder:FindFirstChild("TerrainJSONData") or Instance.new("StringValue")
+        dataStore.Name = "TerrainJSONData"
+        dataStore.Value = jsonText
+        dataStore.Parent = folder
 
-        local restoreScript = Instance.new("Script")
-        restoreScript.Name = "XELO_TERRAIN_RESTORE"
+        -- Pasul 3: Generarea automată a scriptului de restaurare (WriteVoxels) la deschiderea hărții în Studio
+        local restoreScript = folder:FindFirstChild("RestoreTerrain") or Instance.new("Script")
+        restoreScript.Name = "RestoreTerrain"
         restoreScript.Source = table.concat({
+            '-- Script generat automat pentru reconstructia reliefului',
             'local HttpService = game:GetService("HttpService")',
-            'local backup = script.Parent',
-            'if not backup or backup.Name ~= "XELO_TERRAIN_BACKUP" then',
-            '    backup = workspace:FindFirstChild("XELO_TERRAIN_BACKUP")',
-            'end',
-            'if not backup then',
-            '    local ok, ss = pcall(function() return game:GetService("ServerStorage") end)',
-            '    if ok then backup = ss:FindFirstChild("XELO_TERRAIN_BACKUP") end',
-            'end',
-            'if not backup then return end',
-            'local terrainData = HttpService:JSONDecode(require(backup:WaitForChild("XELO_TERRAIN_DATA")))',
-            'local Terrain = workspace:WaitForChild("Terrain")',
-            'Terrain:Clear()',
-            'local region = Region3.new(',
-            '    Vector3.new(terrainData.regionMin.x, terrainData.regionMin.y, terrainData.regionMin.z),',
-            '    Vector3.new(terrainData.regionMax.x, terrainData.regionMax.y, terrainData.regionMax.z)',
-            '):ExpandToGrid(terrainData.resolution)',
+            'local Terrain = workspace:FindFirstChildOfClass("Terrain")',
+            'local dataValue = script.Parent:FindFirstChild("TerrainJSONData")',
+            'if not Terrain or not dataValue then return end',
+            '',
+            'print("XELO: Începe restaurarea reliefului...")',
+            'local terrainData = HttpService:JSONDecode(dataValue.Value)',
+            'local minPos = Vector3.new(terrainData.regionMin[1], terrainData.regionMin[2], terrainData.regionMin[3])',
+            'local sizePos = Vector3.new(terrainData.regionSize[1], terrainData.regionSize[2], terrainData.regionSize[3])',
+            'local region = Region3.new(minPos, minPos + sizePos)',
+            '',
             'local size = terrainData.size',
             'local materials = {}',
             'local occupancies = {}',
+            '',
             'for x = 1, size.x do',
             '    materials[x] = {}',
             '    occupancies[x] = {}',
@@ -4427,37 +4420,37 @@ local function SaveTerrainBackupForSaveInstance()
             '    end',
             'end',
             'Terrain:WriteVoxels(region, terrainData.resolution, materials, occupancies)',
-            'print("XELO: Terrain imported automatically.")',
+            'print("XELO: Importul reliefului s-a finalizat cu succes.")',
         }, "\n")
         restoreScript.Parent = folder
+        folder.Parent = parent
     end
 
-    pcall(function()
-        createBackupFolder(workspace)
-    end)
-    pcall(function()
-        createBackupFolder(game:GetService("ServerStorage"))
-    end)
-    pcall(function()
-        createBackupFolder(game:GetService("ServerScriptService"))
-    end)
+    -- Injectăm folderul în structura jocului pentru a fi sigur că se va serializa corect în fișierul .rbxl / .rbxm final
+    pcall(function() createBackupFolder(workspace) end)
+    pcall(function() createBackupFolder(game:GetService("ServerStorage")) end)
+    pcall(function() createBackupFolder(game:GetService("ServerScriptService")) end)
 end
 
+-- Rulăm funcția înainte de a executa saveinstance
 pcall(SaveTerrainBackupForSaveInstance)
 
+-- Lansarea extractorului complet cu opțiunile corecte pentru Terrain
 synsaveinstance({
-    mode = "full",                    -- full = salvează tot (recomandat pentru Terrain)
+    mode = "full",                    -- full = salvează toată harta, inclusiv instanțele adăugate de noi mai sus
     Object = game,
     Decompile = true,
     NilInstances = true,
-    IgnoreSpecialProperties = false,  -- IMPORTANT pentru Terrain
-    IgnoreDefaultProperties = false,  -- keep terrain data even if values match defaults
+    IgnoreSpecialProperties = false,  -- IMPORTANT: păstrează capabilitățile extinse pentru Terrain
+    IgnoreDefaultProperties = false,  -- Păstrează datele chiar dacă coincid cu cele default
     SaveNotCreatable = true,
     
     IgnoreList = {
         "CoreGui",
         "CorePackages"
-    },
+    }
+})
+
     
     ShowStatus = true,
     AntiIdle = false,
