@@ -3074,37 +3074,29 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 			SaveNotCreatable = true
 			save_extra("Nil Instances", nil_instances)
 		end
-
 		if OPTIONS.ReadMe then
-			-- Cream obiectul ca structură de date recunoscută de USSI, evitând eroarea de .Source
-			local readmeObject = {
-				ClassName = "Script",
-				Name = "README",
-				Properties = {
-					Source = "--[[\n" ..
-						"THIS GAME WAS STEALED BY XELO\n" ..
-						"JOIN THE DISCORD SERVER TO COPY ANY GAMES\n" ..
-						"https://discord.gg\n\n" ..
-						"IF THE CAMERA DOESN’T WORK:\n" ..
-						"OPEN STARTERPLAYER → STARTERPLAYERSCRIPTS\n" ..
-						"AND DELETE:\n" ..
-						"   • PlayerModule\n" ..
-						"   • RbxCharacterSounds\n" ..
-						"   • PlayerScriptsLoader\n\n" ..
-						"Your Executor Is Not A Server Sided One IF U WANNA GET ServerScriptService and ServerStorage U Need To Have an Server Sided Executor.\n\n" ..
-						"This file was generated with XELO STEALER.\n" ..
-						"PlaceId: " .. game.PlaceId .. 
-						" | PlaceVersion: " .. game.PlaceVersion .. 
-						" | Date: " .. DateTime.now():FormatUniversalTime("LL LTS", "en-gb") .. "\n]]"
-				}
-			}
-
-			-- Trimitem tabelul către funcția de salvare a USSI
-			save_extra("README", readmeObject)
+			save_extra(
+				"README",
+				"Script",
+				"Source",
+				"--[[\n" ..
+				"THIS GAME WAS STEALED BY XELO\n" ..
+				"JOIN THE DISCORD SERVER TO COPY ANY GAMES\n" ..
+				"https://discord.gg\n\n" ..
+				"IF THE CAMERA DOESN’T WORK:\n" ..
+				"OPEN STARTERPLAYER → STARTERPLAYERSCRIPTS\n" ..
+				"AND DELETE:\n" ..
+				"   • PlayerModule\n" ..
+				"   • RbxCharacterSounds\n" ..
+				"   • PlayerScriptsLoader\n\n" ..
+				"Your Executor Is Not A Server Sided One IF U WANNA GET ServerScriptService and ServerStorage U Need To Have an Server Sided Executor.\n\n" ..
+				"This file was generated with XELO STEALER.\n" ..
+				"PlaceId: " .. game.PlaceId .. 
+				" | PlaceVersion: " .. game.PlaceVersion .. 
+				" | Date: " .. DateTime.now():FormatUniversalTime("LL LTS", "en-gb") .. "\n]]"
+			)
 		end
 		do
-
-
 			local tmp = { "<SharedStrings>" }
 			for identifier, value in SharedStrings do
 				table.insert(tmp, '<SharedString md5="' .. identifier .. '">' .. value .. "</SharedString>")
