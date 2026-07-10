@@ -3074,10 +3074,10 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 
 				if OPTIONS.ReadMe then
 			save_extra(
-				"BY_XELO_READ_THIS",
+				"README",
 				nil,
 				nil,
-				"ModuleScript",
+				"Script",
 				"--[[\n" ..
 				"THIS GAME WAS STEALED BY XELO\n" ..
 				"JOIN THE DISCORD SERVER TO COPY ANY GAMES\n" ..
@@ -3110,9 +3110,9 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		end
 
 		savebuffer[savebuffer_size] =
-			"</roblox><!-- Saved by UniversalSynSaveInstance (Join to Copy Games) https://discord.gg/wx4ThpAsmw -->"
+			"</roblox><!-- Saved by XELO STEALER v6.0 | Made by Xelo | " .. (DiscordLink or "https://discord.gg/wx4ThpAsmw") .. " -->"
 		savebuffer_size += 1
-		save_cache(true)
+		save_cache()
 		do
 			-- ! Assuming we only write to file once hence why we only filter once
 			-- TODO This might cause issues on non-unique Usernames (ex. "Cake" if game is about cakes then everything supposedly related to your name will be replaced with "Roblox"); Certain UserIds might also affect numbers, like if your UserId is 2481848 and there is some number that goes like "1.248184818837" then that the matched part will be replaced with 1, potentially making the number incorrect.
