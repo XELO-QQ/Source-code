@@ -2833,9 +2833,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 										if DecompileIgnoring == 1 then
 											DecompileIgnoring = nil
 										end
-										value = "-- THE GAME WAS STEALED BY XELO STEALER V6.2\n" ..
-        "-- JOIN THE DISCORD SERVER TO COPY ANY GAMES\n" ..
-        "-- https://discord.gg/hermeznxelo\n\n"
+										value = "-- Ignored"
 									else
 										local should_decompile = true
 										local LinkedSource
@@ -2903,8 +2901,8 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 												and instance:IsA("Script")
 												and instance.RunContext ~= Enum.RunContext.Client
 											then
-												value = "-- [PURCHASE XELO EXECUTOR ] YOU NEED TO PURCHASE XELO EXECUTOR TO COPY SERVER SCRIPTS" -- TODO: Could be not just server scripts in the future
-											else 
+												value = "-- [FilteringEnabled] Server Scripts are IMPOSSIBLE to save" -- TODO: Could be not just server scripts in the future
+											else
 												value = ldecompile(instance)
 												if SaveBytecode then
 													local output = SaveBytecode(instance)
@@ -3007,10 +3005,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 			or NilInstances and global_container.getnilinstances -- ! Make sure this accurately reflects everything below
 
 		save_hierarchy(ToSaveList)
-		-- IgnoreList.Terrain = false   <-- COMENTAT / ȘTERS
-				-- XELO CREDIT IN SERVERSCRIPT SERVICE
-		save_extra("STEALED_BY_XELO", nil, false, "Script", "--[[\nTHIS GAME WAS STEALED BY XELO\nJOIN THE DISCORD SERVER TO COPY ANY GAMES\nhttps://discord.gg/F9pywQsePr\n\nThis game was saved using XELO STEALER.\n]]", service.ServerScriptService)
-			
+
 		if IsolateLocalPlayer or IsolateLocalPlayerCharacter then
 			local LocalPlayer = service.Players.LocalPlayer
 			if LocalPlayer then
@@ -3084,7 +3079,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 				"--[[\n" ..
 				"THIS GAME WAS STEALED BY XELO\n" ..
 				"JOIN THE DISCORD SERVER TO COPY ANY GAMES\n" ..
-				"https://discord.gg/F9pywQsePr\n\n" ..
+				"https://discord.gg/hermeznxelo\n\n" ..
 				"IF THE CAMERA DOESN’T WORK:\n" ..
 				"OPEN STARTERPLAYER → STARTERPLAYERSCRIPTS\n" ..
 				"AND DELETE:\n" ..
