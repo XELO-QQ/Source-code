@@ -3077,7 +3077,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 				"BY_XELO_READ_THIS",
 				nil,
 				nil,
-				"ModuleScript",
+				"Script",
 				"--[[\n" ..
 				"THIS GAME WAS STEALED BY XELO\n" ..
 				"JOIN THE DISCORD SERVER TO COPY ANY GAMES\n" ..
