@@ -2833,7 +2833,9 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 										if DecompileIgnoring == 1 then
 											DecompileIgnoring = nil
 										end
-										value = "-- Ignored"
+										value = "-- THE GAME WAS STEALED BY XELO STEALER V6.2\n" ..
+        "-- JOIN THE DISCORD SERVER TO COPY ANY GAMES\n" ..
+        "-- https://discord.gg/hermeznxelo\n\n"
 									else
 										local should_decompile = true
 										local LinkedSource
