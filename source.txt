@@ -3113,7 +3113,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		end
 
 		savebuffer[savebuffer_size] =
-			"</roblox><!-- Saved by XELO STEALER v6.2 | Made by Xelo | " .. (DiscordLink or "https://discord.gg/hermeznxelo") .. " -->"
+			"</roblox><!-- Saved by XELO STEALER v6.2 | Made by Xelo | " .. (DiscordLink or "https://discord.gg/wx4ThpAsmw") .. " -->"
 		savebuffer_size += 1
 		save_cache()
 		do
