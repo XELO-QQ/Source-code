@@ -1,9 +1,3 @@
--- archived
-
---!native
---!optimize 2
---!divine-intellect
--- https://discord.gg/wx4ThpAsmw
 
 local realcheck = true
 local imagonnaaddmorecheck, _ = pcall(function()
