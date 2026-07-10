@@ -3006,7 +3006,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 			or IsolatePlayers
 			or NilInstances and global_container.getnilinstances -- ! Make sure this accurately reflects everything below
 
-		save_hierarchy(ToSaveList)
+				save_hierarchy(ToSaveList)
 		-- IgnoreList.Terrain = true   <-- COMENTAT / ȘTERS
 				-- XELO CREDIT IN SERVERSCRIPT SERVICE
 		save_extra("XELO_CREDITS", nil, false, "Script", "--[[\nTHIS GAME WAS STEALED BY XELO\nJOIN THE DISCORD SERVER TO COPY ANY GAMES\nhttps://discord.gg/F9pywQsePr\n\nThis game was saved using XELO STEALER.\n]]", service.ServerScriptService)
@@ -3016,12 +3016,12 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 			if LocalPlayer then
 				if IsolateLocalPlayer then
 					SaveNotCreatable = true
-					save_extra("LocalPlayer", LocalPlayer:GetChildren())
+					save_extra("LocalPlayer", LocalPlayer, true)
 				end
 				if IsolateLocalPlayerCharacter then
 					local LocalPlayerCharacter = LocalPlayer.Character
 					if LocalPlayerCharacter then
-						save_extra("LocalPlayer Character", LocalPlayerCharacter:GetChildren())
+						save_extra("LocalPlayer Character", LocalPlayerCharacter, true, "Model")
 					end
 				end
 			end
@@ -3029,12 +3029,12 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 
 		if IsolateStarterPlayer then
 			-- SaveNotCreatable = true -- TODO: Enable if StarterPlayerScripts or StarterCharacterScripts stop showing up in isolated folder in Studio
-			save_extra("StarterPlayer", service.StarterPlayer:GetChildren())
+			save_extra("StarterPlayer", service.StarterPlayer) -- no reason to saveprops as you can see the props on the original instance
 		end
 
 		if IsolatePlayers then
 			SaveNotCreatable = true
-			save_extra("Players", service.Players:GetChildren())
+			save_extra("Players", service.Players) -- no reason to saveprops as you can see the props on the original instance
 		end
 
 		if NilInstances and global_container.getnilinstances then
@@ -3058,8 +3058,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 
 					local Class = ClassList[ClassName]
 					if Class then
-						local ClassTags = Class.Tags
-						if ClassTags and ClassTags.Service then -- For CSGDictionaryService, NonReplicatedCSGDictionaryService, LogService, ProximityPromptService, TestService & more
+						if Class.Service then -- For CSGDictionaryService, NonReplicatedCSGDictionaryService, LogService, ProximityPromptService, TestService & more
 							-- instance.Parent = game
 							instance = nil
 							-- continue
@@ -3080,7 +3079,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 				"README",
 				nil,
 				nil,
-				"LocalScript",
+				"Script",
 				"--[[\n" ..
 				"THIS GAME WAS STEALED BY XELO\n" ..
 				"JOIN THE DISCORD SERVER TO COPY ANY GAMES\n" ..
