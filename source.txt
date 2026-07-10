@@ -1,3 +1,9 @@
+-- archived
+
+--!native
+--!optimize 2
+--!divine-intellect
+-- https://discord.gg/wx4ThpAsmw
 
 local realcheck = true
 local imagonnaaddmorecheck, _ = pcall(function()
@@ -3068,7 +3074,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 
 				if OPTIONS.ReadMe then
 			save_extra(
-				"README",
+				"BY_XELO_READ_THIS",
 				nil,
 				nil,
 				"Script",
@@ -3362,7 +3368,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 				LocalPlayer:Kick("\n[SAFEMODE] Saving in Progress..\nPlease do NOT leave")
 				wait_for_render()
 				task.delay(10, service.GuiService.ClearError, service.GuiService)
-			end)\
+			end)
 
 			service.RunService:Set3dRenderingEnabled(false)
 		end
