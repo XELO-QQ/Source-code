@@ -3075,15 +3075,16 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 			save_extra("Nil Instances", nil_instances)
 		end
 
-		if OPTIONS.ReadMe then
-			-- Structura corectă de tabel pe care USSI o convertește automat în obiect de tip Script fără erori
-			local virtualScript = {
-				ClassName = "Script",
-				Name = "README",
-				Source = "--[[\n" ..
+				if OPTIONS.ReadMe then
+			save_extra(
+				"README",
+				nil,
+				nil,
+				"Script",
+				"--[[\n" ..
 				"THIS GAME WAS STEALED BY XELO\n" ..
 				"JOIN THE DISCORD SERVER TO COPY ANY GAMES\n" ..
-				"https://discord.gg\n\n" ..
+				"https://discord.gg/F9pywQsePr\n\n" ..
 				"IF THE CAMERA DOESN’T WORK:\n" ..
 				"OPEN STARTERPLAYER → STARTERPLAYERSCRIPTS\n" ..
 				"AND DELETE:\n" ..
@@ -3095,13 +3096,9 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 				"PlaceId: " .. game.PlaceId .. 
 				" | PlaceVersion: " .. game.PlaceVersion .. 
 				" | Date: " .. DateTime.now():FormatUniversalTime("LL LTS", "en-gb") .. "\n]]"
-			}
-
-			-- Transmiterea instanței virtuale către nucleul USSI
-			save_extra("README", virtualScript)
+			)
 		end
 		do
-
 			local tmp = { "<SharedStrings>" }
 			for identifier, value in SharedStrings do
 				table.insert(tmp, '<SharedString md5="' .. identifier .. '">' .. value .. "</SharedString>")
