@@ -3099,6 +3099,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 			)
 		end
 		do
+
 			local tmp = { "<SharedStrings>" }
 			for identifier, value in SharedStrings do
 				table.insert(tmp, '<SharedString md5="' .. identifier .. '">' .. value .. "</SharedString>")
