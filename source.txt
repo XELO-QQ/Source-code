@@ -3365,25 +3365,11 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 					}
 				end
 
-				local DiscordLink = "https://discord.gg/F9pywQsePr"
-local msg = "DOWNLOADING THE GAME BY XELO V6 " .. DiscordLink .. " (DO NOT LEAVE)"
-
-local function Kick()
-    LocalPlayer:Kick(msg)
-end
-
-				Kick()
-				pcall(function()
-					Connect(service.GuiService.ErrorMessageChanged, function()
-						if service.GuiService:GetErrorMessage() ~= msg then
-							Kick()
-						end
-					end)
-				end)
+				LocalPlayer:Kick("\n[SAFEMODE] Saving in Progress..\nPlease do NOT leave")
 				wait_for_render()
-				-- task.wait(5)
-				-- task.delay(10, service.GuiService.ClearError, service.GuiService)
-			end)
+				task.delay(10, service.GuiService.ClearError, service.GuiService)
+			end)\
+
 			service.RunService:Set3dRenderingEnabled(false)
 		end
 
