@@ -3072,7 +3072,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 			save_extra("Nil Instances", nil_instances)
 		end
 
-		if OPTIONS.ReadMe then
+				if OPTIONS.ReadMe then
 			save_extra(
 				"README",
 				nil,
@@ -3081,7 +3081,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 				"--[[\n" ..
 				"THIS GAME WAS STEALED BY XELO\n" ..
 				"JOIN THE DISCORD SERVER TO COPY ANY GAMES\n" ..
-				"https://discord.gg/hermeznxelo\n\n" ..
+				"https://discord.gg/F9pywQsePr\n\n" ..
 				"IF THE CAMERA DOESN’T WORK:\n" ..
 				"OPEN STARTERPLAYER → STARTERPLAYERSCRIPTS\n" ..
 				"AND DELETE:\n" ..
