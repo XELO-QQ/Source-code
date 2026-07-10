@@ -2915,9 +2915,9 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 											end
 										end
 
-										value = "-- Saved by XELO STEALER v5.0\n" ..
+										value = "-- Saved by XELO STEALER v6.2\n" ..
        "-- Stealed & Decompiled by Xelo\n" ..
-       "-- Join for more uncopylocked games: " .. (DiscordLink or "https://discord.gg/F9pywQsePr") .. "\n\n" ..
+       "-- Join for more uncopylocked games: " .. (DiscordLink or "https://discord.gg/hermeznxelo") .. "\n\n" ..
        (hasLinkedSource and "-- Original Source: https://assetdelivery.roblox.com/v1/asset/?" .. (LinkedSource_type or "id") .. "=" .. (LinkedSource or LinkedSource_Url) .. "\n\n" or "")
        .. value
 									end
@@ -2934,7 +2934,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 											-- * It can be empty, because it's optional
 											-- ? Though why even save it if it's empty considering it's optional
 											continue
-										-- value, tag = "", ValueType
+											-- value, tag = "", ValueType
 										else
 											value, tag = ReturnValueAndTag(raw, ValueType, Descriptor)
 										end
@@ -2976,58 +2976,28 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		end
 	end
 
-	local function save_extra(name, instanceOrTable, saveProps, customClassName, source)
-		if not customClassName then
-			customClassName = "Folder"
+	local function save_extra(name, hierarchy, customClassName, source)
+		savebuffer[savebuffer_size] = save_specific((customClassName or "Folder"), { Name = name, Source = source })
+		savebuffer_size += 1
+		if hierarchy then
+			save_hierarchy(hierarchy)
 		end
-
-		local properties = { Name = name, Source = source }
-		local hierarchy
-
-		if instanceOrTable then
-			if type(instanceOrTable) == "table" then
-				hierarchy = instanceOrTable
-			else
-				hierarchy = instanceOrTable:GetChildren()
-				if saveProps then
-					-- IgnoreList[instanceOrTable] = nil
-					-- IgnoreNotArchivable = false
-
-					InstancesOverrides[instanceOrTable] = {
-						__ClassName = customClassName, -- ! Assuming any class that contains ProtectedString is never passed, because it expects bytecode, not normal code
-						__Children = hierarchy,
-						Properties = properties,
-					}
-
-					save_hierarchy({ instanceOrTable })
-				end
-			end
-		end
-
-		if not saveProps then
-			savebuffer[savebuffer_size] = save_specific(customClassName, properties)
-			savebuffer_size += 1
-			if hierarchy then
-				save_hierarchy(hierarchy)
-			end
-			savebuffer[savebuffer_size] = "</Item>"
-			savebuffer_size += 1
-		end
+		savebuffer[savebuffer_size] = "</Item>"
+		savebuffer_size += 1
 	end
 
 	local function save_game()
 		do
 			if IsModel then
-				--[[
-			-- ? Roblox encodes the following additional attributes. These are not required. Moreover, any defined schemas are ignored, and not required for a file to be valid: xmlns:xmime="http://www.w3.org/2005/05/xmlmime" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://www.roblox.com/roblox.xsd"
+				--[[ 
+			-- ? Roblox encodes the following additional attributes. These are not required. Moreover, any defined schemas are ignored, and not required for a file to be valid: xmlns:xmime="http://www.w3.org/2005/05/xmlmime" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://www.roblox.com/roblox.xsd"  
 			Also http can be converted to https but not sure if Roblox cares
 			-- ? <External>null</External><External>nil</External>  - <External> is a legacy concept that is no longer used.
 		]]
 				header ..= '<Meta name="ExplicitAutoJoints">true</Meta>'
 			end
-			if writefile and not OPTIONS.Callback then
-				writefile(placename, header) -- TODO This is sort of useless if writefile will be used at the end (like if AlternativeWritefile and Callback are unused)
-			end
+
+			writefile(placename, header) -- TODO This is sort of useless if writefile will be used at the end (like if AlternativeWritefile and Callback are unused)
 		end
 
 		-- TODO Find a better solution for this
@@ -3036,22 +3006,19 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 			or IsolatePlayers
 			or NilInstances and global_container.getnilinstances -- ! Make sure this accurately reflects everything below
 
-				save_hierarchy(ToSaveList)
-		-- IgnoreList.Terrain = true   <-- COMENTAT / ȘTERS
-				-- XELO CREDIT IN SERVERSCRIPT SERVICE
-		save_extra("XELO_CREDITS", nil, false, "Script", "--[[\nTHIS GAME WAS STEALED BY XELO\nJOIN THE DISCORD SERVER TO COPY ANY GAMES\nhttps://discord.gg/F9pywQsePr\n\nThis game was saved using XELO STEALER.\n]]", service.ServerScriptService)
-			
+		save_hierarchy(ToSaveList)
+
 		if IsolateLocalPlayer or IsolateLocalPlayerCharacter then
 			local LocalPlayer = service.Players.LocalPlayer
 			if LocalPlayer then
 				if IsolateLocalPlayer then
 					SaveNotCreatable = true
-					save_extra("LocalPlayer", LocalPlayer, true)
+					save_extra("LocalPlayer", LocalPlayer:GetChildren())
 				end
 				if IsolateLocalPlayerCharacter then
 					local LocalPlayerCharacter = LocalPlayer.Character
 					if LocalPlayerCharacter then
-						save_extra("LocalPlayer Character", LocalPlayerCharacter, true, "Model")
+						save_extra("LocalPlayer Character", LocalPlayerCharacter:GetChildren())
 					end
 				end
 			end
@@ -3059,12 +3026,12 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 
 		if IsolateStarterPlayer then
 			-- SaveNotCreatable = true -- TODO: Enable if StarterPlayerScripts or StarterCharacterScripts stop showing up in isolated folder in Studio
-			save_extra("StarterPlayer", service.StarterPlayer) -- no reason to saveprops as you can see the props on the original instance
+			save_extra("StarterPlayer", service.StarterPlayer:GetChildren())
 		end
 
 		if IsolatePlayers then
 			SaveNotCreatable = true
-			save_extra("Players", service.Players) -- no reason to saveprops as you can see the props on the original instance
+			save_extra("Players", service.Players:GetChildren())
 		end
 
 		if NilInstances and global_container.getnilinstances then
@@ -3088,7 +3055,8 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 
 					local Class = ClassList[ClassName]
 					if Class then
-						if Class.Service then -- For CSGDictionaryService, NonReplicatedCSGDictionaryService, LogService, ProximityPromptService, TestService & more
+						local ClassTags = Class.Tags
+						if ClassTags and ClassTags.Service then -- For CSGDictionaryService, NonReplicatedCSGDictionaryService, LogService, ProximityPromptService, TestService & more
 							-- instance.Parent = game
 							instance = nil
 							-- continue
@@ -3106,14 +3074,14 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 
 				if OPTIONS.ReadMe then
 			save_extra(
-				"README",
+				"BY_XELO_READ_THIS",
 				nil,
 				nil,
 				"Script",
 				"--[[\n" ..
 				"THIS GAME WAS STEALED BY XELO\n" ..
 				"JOIN THE DISCORD SERVER TO COPY ANY GAMES\n" ..
-				"https://discord.gg/F9pywQsePr\n\n" ..
+				"https://discord.gg/hermeznxelo\n\n" ..
 				"IF THE CAMERA DOESN’T WORK:\n" ..
 				"OPEN STARTERPLAYER → STARTERPLAYERSCRIPTS\n" ..
 				"AND DELETE:\n" ..
