@@ -3089,70 +3089,29 @@ end
 		end
 
 		if OPTIONS.ReadMe then
-    local placeId = game.PlaceId
-    local placeVersion = game.PlaceVersion
-    local formattedDate = DateTime.now():FormatUniversalTime("LL LTS", "en-gb")
-
-    -- Definim bucățile de cod ca string-uri separate pentru a evita problemele de formatare
-    local chatCmd = [[game:GetService("Chat"):ClearAllChildren(); game:GetService("TextChatService"):ClearAllChildren()]]
-    local meshCmd = [[for _, v in game:GetDescendants() do if v:IsA("TriangleMeshPart") then v.CollisionFidelity = "Default" end end print("Done :white_check_mark:")]]
-
-    -- Construirea unui șablon de text complex și extins
-    local readmeContent = string.format([[
---[[
-=================================================================================
-    XELO SYSTEM ARCHIVE — GENERATED MANIFEST
-=================================================================================
-    
-    [ PROJECT DETAILS ]
-    • Target Place ID : %s
-    • Place Version   : %s
-    • Timestamp (UTC) : %s
-    
-=================================================================================
-    [ DOCUMENTATION & COMMUNITY ]
-    
-    Want to archive and copy more experiences? Join the official network:
-    :link: Discord Link: https://discord.gg/hermeznxelo
-    
-=================================================================================
-    # THIS IS HOW TO FIX ROBLOX STUDIO CAMERA AND OTHER BUGS !:bug: 
-
-    :tools: Roblox Studio Quick Fixes
-    
-    1. Player won't spawn? :man_walking:
-       • Go to StarterPlayerScripts ➔ DELETE: PlayerModule, RbxCharacterSounds and PlayerScriptsLoader.
-
-    2. Chat not working? :speech_balloon:
-       • Clear TextChatService & Chat folders.
-       • Cmd: %s
-
-    3. Fix Mesh/Union Collisions :bricks:
-       • Run this in Command Bar:
-         %s
-
-    4. Camera stuck? :movie_camera:
-       • Cmd: workspace.CurrentCamera.CameraType = Enum.CameraType.Fixed
-       • Or simply delete the Camera object. :wastebasket:
-
-  
-
-=================================================================================
-    [ TECHNICAL LIMITATIONS NOTICE ]
-    
-    • Current Environment: Client-Side Execution Context.
-    • Missing Assets: ServerScriptService and ServerStorage contents.
-    • Requirement: To fully extract server-side assets, a Server-Sided (SS) 
-      executor with elevated privileges must be utilized.
-
-=================================================================================
-    This file was automatically generated via XELO STEALER framework.
-=================================================================================
-]]]], placeId, placeVersion, formattedDate, chatCmd, meshCmd)
-
-    save_extra("README", nil, nil, "Script", readmeContent)
-end
-
+			save_extra(
+				"README",
+				nil,
+				nil,
+				"Script",
+				"--[[\n" ..
+				"THIS GAME WAS STEALED BY XELO\n" ..
+				"JOIN THE DISCORD SERVER TO COPY ANY GAMES\n" ..
+				"https://discord.gg/F9pywQsePr\n\n" ..
+				"IF THE CAMERA DOESN’T WORK:\n" ..
+				"OPEN STARTERPLAYER → STARTERPLAYERSCRIPTS\n" ..
+				"AND DELETE:\n" ..
+				"   • PlayerModule\n" ..
+				"   • RbxCharacterSounds\n" ..
+				"   • PlayerScriptsLoader\n\n" ..
+				"Your Executor Is Not A Server Sided One IF U WANNA GET ServerScriptService and ServerStorage U Need To Have an Server Sided Executor.\n\n" ..
+				"This file was generated with XELO STEALER.\n" ..
+				"PlaceId: " .. game.PlaceId .. 
+				" | PlaceVersion: " .. game.PlaceVersion .. 
+				" | Date: " .. DateTime.now():FormatUniversalTime("LL LTS", "en-gb") .. "\n]]"
+			)
+		end
+		do
 			local tmp = { "<SharedStrings>" }
 			for identifier, value in SharedStrings do
 				table.insert(tmp, '<SharedString md5="' .. identifier .. '">' .. value .. "</SharedString>")
