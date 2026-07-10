@@ -3384,7 +3384,6 @@ end
 				-- task.wait(5)
 				-- task.delay(10, service.GuiService.ClearError, service.GuiService)
 			end)
-
 			service.RunService:Set3dRenderingEnabled(false)
 		end
 
