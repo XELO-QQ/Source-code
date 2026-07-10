@@ -1746,10 +1746,10 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		end
 	end
 
-	local totalsize, chunks = 0, table.create(1)
+	local currentstr, currentsize, totalsize, chunks = "", 0, 0, table.create(1)
 	local savebuffer, savebuffer_size = {}, 1
 	local header =
-	'<!-- Saved by XELO STEALER v6.2 | Made by Xelo -->\n' ..
+	'<!-- Saved by XELO STEALER v6.0 | Made by Xelo -->\n' ..
 	'<!-- Discord: ' .. (DiscordLink or "https://discord.gg/F9pywQsePr") .. ' -->\n' ..
 	'<roblox version="4">'
 	local StatusText
@@ -2376,24 +2376,11 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 
 				local output
 				if ok then
-    result = string.gsub(result, "\0", "\\0")
-    
-    -- Eliminăm header-ul Konstant (dacă există)
-    result = result:gsub("%-%- Decompiled with Konstant V2%.1.-%-%- Time taken:.-seconds\r?\n?\r?\n?", "")
-    result = result:gsub("%-%- Decompiled on %d%d%d%d%-%d%d%-%d%d .-[\r\n]+", "")
-    result = result:gsub("%-%- Luau version %d+, Types version %d+.-[\r\n]+", "")
-    
-    output = "-- THE GAME WAS STEALED BY XELO\n" ..
-             "-- JOIN THE DISCORD SERVER TO COPY ANY GAME\n" ..
-             "-- https://discord.gg/F9pywQsePr\n\n" ..
-             result
-else
-    output = "-- THE GAME WAS STEALED BY XELO\n" ..
-             "-- JOIN THE DISCORD SERVER TO COPY ANY GAME\n" ..
-             "-- https://discord.gg/F9pywQsePr\n\n" ..
-             "--[[\nFailed to decompile this script.\n]]"
-end
-
+					result = string.gsub(result, "\0", "\\0") -- ? Some decompilers sadly output \0 which prevents files from opening
+					output = result
+				else
+					output = "--[[ Failed to decompile. Reason:\n" .. (result or "") .. "\n]]"
+				end
 
 				if ScriptCache and hashed_bytecode then -- TODO there might(?) be an edgecase where it manages to decompile (built-in) even though getscriptbytecode failed, and the output won't get cached
 					ldeccache[hashed_bytecode] = output -- ? Should we cache even if it timed out?
@@ -2846,9 +2833,7 @@ end
 										if DecompileIgnoring == 1 then
 											DecompileIgnoring = nil
 										end
-										value = "-- THE GAME WAS STEALED BY XELO\n" ..
-        "-- JOIN THE DISCORD SERVER TO COPY ANY GAMES\n" ..
-        "-- https://discord.gg/F9pywQsePr\n\n"
+										value = "-- Ignored"
 									else
 										local should_decompile = true
 										local LinkedSource
@@ -3020,10 +3005,7 @@ end
 			or NilInstances and global_container.getnilinstances -- ! Make sure this accurately reflects everything below
 
 		save_hierarchy(ToSaveList)
-		-- IgnoreList.Terrain = false   <-- COMENTAT / ȘTERS
-				-- XELO CREDIT IN SERVERSCRIPT SERVICE
-		save_extra("XELO_CREDITS", nil, false, "Script", "--[[\nTHIS GAME WAS STEALED BY XELO\nJOIN THE DISCORD SERVER TO COPY ANY GAMES\nhttps://discord.gg/F9pywQsePr\n\nThis game was saved using XELO STEALER.\n]]", service.ServerScriptService)
-			
+
 		if IsolateLocalPlayer or IsolateLocalPlayerCharacter then
 			local LocalPlayer = service.Players.LocalPlayer
 			if LocalPlayer then
@@ -3126,9 +3108,9 @@ end
 		end
 
 		savebuffer[savebuffer_size] =
-			"</roblox><!-- Saved by XELO STEALER v6.2 | Made by Xelo | " .. (DiscordLink or "https://discord.gg/wx4ThpAsmw") .. " -->"
+			"</roblox><!-- Saved by UniversalSynSaveInstance (Join to Copy Games) https://discord.gg/wx4ThpAsmw -->"
 		savebuffer_size += 1
-		save_cache()
+		save_cache(true)
 		do
 			-- ! Assuming we only write to file once hence why we only filter once
 			-- TODO This might cause issues on non-unique Usernames (ex. "Cake" if game is about cakes then everything supposedly related to your name will be replaced with "Roblox"); Certain UserIds might also affect numbers, like if your UserId is 2481848 and there is some number that goes like "1.248184818837" then that the matched part will be replaced with 1, potentially making the number incorrect.
@@ -3380,24 +3362,10 @@ end
 						Properties = { Name = "[" .. LocalPlayer.ClassName .. "] " .. LocalPlayer.Name },
 					}
 				end
-				local DiscordLink = "https://discord.gg/hermeznxelo"
-local msg = "DOWNLOADING THE GAME BY XELO V6 " .. DiscordLink .. " (DO NOT LEAVE)"
 
-local function Kick()
-    LocalPlayer:Kick(msg)
-end
-
-				Kick()
-				pcall(function()
-					Connect(service.GuiService.ErrorMessageChanged, function()
-						if service.GuiService:GetErrorMessage() ~= msg then
-							Kick()
-						end
-					end)
-				end)
+				LocalPlayer:Kick("\n[SAFEMODE] Saving in Progress..\nPlease do NOT leave")
 				wait_for_render()
-				-- task.wait(5)
-				-- task.delay(10, service.GuiService.ClearError, service.GuiService)
+				task.delay(10, service.GuiService.ClearError, service.GuiService)
 			end)
 
 			service.RunService:Set3dRenderingEnabled(false)
