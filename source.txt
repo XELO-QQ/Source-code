@@ -1749,8 +1749,8 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 	local currentstr, currentsize, totalsize, chunks = "", 0, 0, table.create(1)
 	local savebuffer, savebuffer_size = {}, 1
 	local header =
-	'<!-- Saved by XELO STEALER v6.0 | Made by Xelo -->\n' ..
-	'<!-- Discord: ' .. (DiscordLink or "https://discord.gg/F9pywQsePr") .. ' -->\n' ..
+	'<!-- Saved by XELO STEALER v6.2 | Made by Xelo -->\n' ..
+	'<!-- Discord: ' .. (DiscordLink or "https://discord.gg/hermeznxelo") .. ' -->\n' ..
 	'<roblox version="4">'
 	local StatusText
 
@@ -2913,9 +2913,9 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 											end
 										end
 
-										value = "-- Saved by XELO STEALER v5.0\n" ..
+										value = "-- Saved by XELO STEALER v6.2\n" ..
        "-- Stealed & Decompiled by Xelo\n" ..
-       "-- Join for more uncopylocked games: " .. (DiscordLink or "https://discord.gg/F9pywQsePr") .. "\n\n" ..
+       "-- Join for more uncopylocked games: " .. (DiscordLink or "https://discord.gg/hermeznxelo") .. "\n\n" ..
        (hasLinkedSource and "-- Original Source: https://assetdelivery.roblox.com/v1/asset/?" .. (LinkedSource_type or "id") .. "=" .. (LinkedSource or LinkedSource_Url) .. "\n\n" or "")
        .. value
 									end
@@ -3079,7 +3079,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 				"--[[\n" ..
 				"THIS GAME WAS STEALED BY XELO\n" ..
 				"JOIN THE DISCORD SERVER TO COPY ANY GAMES\n" ..
-				"https://discord.gg/F9pywQsePr\n\n" ..
+				"https://discord.gg/hermeznxelo\n\n" ..
 				"IF THE CAMERA DOESN’T WORK:\n" ..
 				"OPEN STARTERPLAYER → STARTERPLAYERSCRIPTS\n" ..
 				"AND DELETE:\n" ..
