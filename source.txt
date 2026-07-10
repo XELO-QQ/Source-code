@@ -3077,7 +3077,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 
 				if OPTIONS.ReadMe then
 			save_extra(
-				"BY_XELO_READ_THIS",
+				"README",
 				nil,
 				nil,
 				"Script",
