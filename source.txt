@@ -2896,23 +2896,33 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 										end
 
 										if should_decompile then
-											local isLocalScript = instance:IsA("LocalScript")
-											if
-												isLocalScript and instance.RunContext == Enum.RunContext.Server
-												or not isLocalScript
-												and instance:IsA("Script")
-												and instance.RunContext ~= Enum.RunContext.Client
-											then
-												value = "-- [PURCHASE XELO EXECUTOR ] YOU NEED TO PURCHASE XELO EXECUTOR TO COPY SERVER SCRIPTS" -- TODO: Could be not just server scripts in the future
-											else 
-												value = ldecompile(instance)
-												if SaveBytecode then
-													local output = SaveBytecode(instance)
-													if output then
-														value = output .. value
-													end
-												end
-											end
+								local decompile_script = ldecompile or function()
+									return "-- Decompiling unavailable"
+								end
+								local save_bytecode_script = SaveBytecode or function()
+									return nil
+								end
+
+								local ok, result = pcall(function()
+									local isLocalScript = instance and instance:IsA("LocalScript")
+									if
+										isLocalScript and instance.RunContext == Enum.RunContext.Server
+										or not isLocalScript
+										and instance and instance:IsA("Script")
+										and instance.RunContext ~= Enum.RunContext.Client
+									then
+										value = "-- [PURCHASE XELO EXECUTOR ] YOU NEED TO PURCHASE XELO EXECUTOR TO COPY SERVER SCRIPTS" -- TODO: Could be not just server scripts in the future
+									else
+										value = decompile_script(instance)
+										local output = save_bytecode_script(instance)
+										if output then
+											value = output .. value
+										end
+									end
+								end)
+
+								if not ok then
+									value = "-- Failed to decompile script. Reason:\n" .. tostring(result)
 										end
 
 										value = "-- Saved by XELO STEALER v6.2\n" ..
