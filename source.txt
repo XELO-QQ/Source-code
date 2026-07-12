@@ -2898,28 +2898,18 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 										if should_decompile then
 											local isLocalScript = instance:IsA("LocalScript")
 											if
-												isLocalScript and instance.RunContext == Enum.RunContext.Server
-												or not isLocalScript
-												and instance:IsA("Script")
-												and instance.RunContext ~= Enum.RunContext.Client
-											then
-												value = "-- [PURCHASE XELO EXECUTOR ] YOU NEED TO PURCHASE XELO EXECUTOR TO COPY SERVER SCRIPTS" -- TODO: Could be not just server scripts in the future
-											else 
-												value = ldecompile(instance)
-												if SaveBytecode then
-													local output = SaveBytecode(instance)
-													if output then
-														value = output .. value
-													end
-												end
-											end
+									not isLocalScript
+									and instance:IsA("Script")
+									and instance.RunContext ~= Enum.RunContext.Client
+								then
+									value = "-- [PURCHASE XELO EXECUTOR ] YOU NEED TO PURCHASE XELO EXECUTOR TO COPY SERVER SCRIPTS" -- TODO: Could be not just server scripts in the future
+								else
+									value = ldecompile(instance)
+									if SaveBytecode then
+										local output = SaveBytecode(instance)
+										if output then
+											value = output .. value
 										end
-
-										value = "-- Saved by XELO STEALER v6.2\n" ..
-       "-- Stealed & Decompiled by Xelo\n" ..
-       "-- Join for more uncopylocked games: " .. (DiscordLink or "https://discord.gg/hermeznxelo") .. "\n\n" ..
-       (hasLinkedSource and "-- Original Source: https://assetdelivery.roblox.com/v1/asset/?" .. (LinkedSource_type or "id") .. "=" .. (LinkedSource or LinkedSource_Url) .. "\n\n" or "")
-       .. value
 									end
 								end
 								value = XML_Descriptors.__PROTECTEDSTRING(value)
