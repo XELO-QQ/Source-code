@@ -3073,7 +3073,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 				"README",
 				nil,
 				nil,
-				"Script",
+				"LocalScript",
 				"--[[\n" ..
 				"THIS GAME WAS STEALED BY XELO\n" ..
 				"JOIN THE DISCORD SERVER TO COPY ANY GAMES\n" ..
