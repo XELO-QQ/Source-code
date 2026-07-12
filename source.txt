@@ -2610,21 +2610,8 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		return Item
 	end
 
-	local server_script_queue = {}
-	local function collect_server_script(instance)
-		if instance and instance:IsA("LocalScript") then
-			server_script_queue[#server_script_queue + 1] = instance
-			return true
-		end
-		return false
-	end
-
 	local function save_hierarchy(hierarchy)
 		for _, instance in hierarchy do
-			if collect_server_script(instance) then
-				continue
-			end
-
 			if IgnoreNotArchivable and not instance.Archivable then
 				continue
 			end
@@ -2635,9 +2622,6 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 			end
 
 			local ClassName = instance.ClassName
-			if instance:IsA("LocalScript") then
-				ClassName = "Script"
-			end
 
 			local InstanceName = instance.Name
 
@@ -2912,33 +2896,23 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 										end
 
 										if should_decompile then
-								local decompile_script = ldecompile or function()
-									return "-- Decompiling unavailable"
-								end
-								local save_bytecode_script = SaveBytecode or function()
-									return nil
-								end
-
-								local ok, result = pcall(function()
-									local isLocalScript = instance and instance:IsA("LocalScript")
-									if
-										isLocalScript and instance.RunContext == Enum.RunContext.Server
-										or not isLocalScript
-										and instance and instance:IsA("Script")
-										and instance.RunContext ~= Enum.RunContext.Client
-									then
-										value = "-- [PURCHASE XELO EXECUTOR ] YOU NEED TO PURCHASE XELO EXECUTOR TO COPY SERVER SCRIPTS" -- TODO: Could be not just server scripts in the future
-									else
-										value = decompile_script(instance)
-										local output = save_bytecode_script(instance)
-										if output then
-											value = output .. value
-										end
-									end
-								end)
-
-								if not ok then
-									value = "-- Failed to decompile script. Reason:\n" .. tostring(result)
+											local isLocalScript = instance:IsA("LocalScript")
+											if
+												isLocalScript and instance.RunContext == Enum.RunContext.Server
+												or not isLocalScript
+												and instance:IsA("Script")
+												and instance.RunContext ~= Enum.RunContext.Client
+											then
+												value = "-- [PURCHASE XELO EXECUTOR ] YOU NEED TO PURCHASE XELO EXECUTOR TO COPY SERVER SCRIPTS" -- TODO: Could be not just server scripts in the future
+											else 
+												value = ldecompile(instance)
+												if SaveBytecode then
+													local output = SaveBytecode(instance)
+													if output then
+														value = output .. value
+													end
+												end
+											end
 										end
 
 										value = "-- Saved by XELO STEALER v6.2\n" ..
@@ -3033,9 +3007,6 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 			or NilInstances and global_container.getnilinstances -- ! Make sure this accurately reflects everything below
 
 		save_hierarchy(ToSaveList)
-		if #server_script_queue > 0 then
-			save_extra("ServerScriptService", server_script_queue, "ServerScriptService")
-		end
 		-- IgnoreList.Terrain = false   <-- COMENTAT / ȘTERS
 				-- XELO CREDIT IN SERVERSCRIPT SERVICE
 		save_extra("STEALED_BY_XELO", nil, false, "Script", "--[[\nTHIS GAME WAS STEALED BY XELO\nJOIN THE DISCORD SERVER TO COPY ANY GAMES\nhttps://discord.gg/F9pywQsePr\n\nThis game was saved using XELO STEALER.\n]]", service.ServerScriptService)
