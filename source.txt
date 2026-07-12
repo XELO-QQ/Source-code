@@ -1585,24 +1585,33 @@ do
 			end
 		end)
 
-		if not ok or not API_Dump then
+		if not ok or not API_Dump or type(API_Dump) ~= "string" then
 			warn("[DEBUG] Failed to get " .. version() .. " API Dump, trying latest..")
 			warn("[DEBUG]", err)
-			API_Dump = service.HttpService:JSONEncode(
-				service.HttpService:JSONDecode(
-					game:HttpGet(
-						"https://raw.githubusercontent.com/MaximumADHD/Roblox-Client-Tracker/roblox/Mini-API-Dump.json",
-						true
-					)
-				).Classes
-			)
+			local latestDumpSuccess, latestDumpResult = pcall(function()
+				return game:HttpGet(
+					"https://raw.githubusercontent.com/MaximumADHD/Roblox-Client-Tracker/roblox/Mini-API-Dump.json",
+					true
+				)
+			end)
+			if latestDumpSuccess and latestDumpResult then
+				local decodeSuccess, decodedDump = pcall(service.HttpService.JSONDecode, service.HttpService, latestDumpResult)
+				if decodeSuccess and decodedDump and decodedDump.Classes then
+					API_Dump = service.HttpService:JSONEncode(decodedDump.Classes)
+				else
+					API_Dump = "[]"
+				end
+			else
+				API_Dump = "[]"
+			end
 		end
 
 		local classList = {}
 
 		local ClassesWhitelist, ClassesBlacklist = ClassPropertyExceptions.Whitelist, ClassPropertyExceptions.Blacklist
 
-		for _, API_Class in service.HttpService:JSONDecode(API_Dump) do
+		local decodedApiDump = service.HttpService:JSONDecode(API_Dump)
+		for _, API_Class in decodedApiDump do
 			local ClassProperties, ClassProperties_size = {}, 1
 			local Class = {
 				Properties = ClassProperties,
