@@ -19,6 +19,15 @@ local table = table
 local string = string
 local math = math
 local tonumber = tonumber
+
+local function safe_writefile(path, value)
+	if type(path) ~= "string" or type(value) ~= "string" then
+		return false
+	end
+	pcall(writefile, path, value)
+	return true
+end
+
 local function to_base64(data)
 	local result, bit_table = {}, {}
 	for i = 1, #data do
@@ -46,11 +55,24 @@ end
 if gethiddenproperty and realcheck then
 	getgenv().gethiddenpropertygethiddenproperty = gethiddenproperty
 
-	writefile("SmoothGrid.txt", gethiddenpropertygethiddenproperty(workspace.Terrain, "SmoothGrid"))
-	writefile("PhysicsGrid.txt", gethiddenpropertygethiddenproperty(workspace.Terrain, "PhysicsGrid"))
+	local smoothGridValue = gethiddenpropertygethiddenproperty(workspace.Terrain, "SmoothGrid")
+	local physicsGridValue = gethiddenpropertygethiddenproperty(workspace.Terrain, "PhysicsGrid")
 
-	getfenv().physicsgrid = to_base64(readfile("PhysicsGrid.txt"))
-	getfenv().smoothgrid = to_base64(readfile("SmoothGrid.txt"))
+	if type(smoothGridValue) == "string" then
+		safe_writefile("SmoothGrid.txt", smoothGridValue)
+	end
+	if type(physicsGridValue) == "string" then
+		safe_writefile("PhysicsGrid.txt", physicsGridValue)
+	end
+
+	local okPhysics, physicsContent = pcall(readfile, "PhysicsGrid.txt")
+	local okSmooth, smoothContent = pcall(readfile, "SmoothGrid.txt")
+	if okPhysics and physicsContent then
+		getfenv().physicsgrid = to_base64(physicsContent)
+	end
+	if okSmooth and smoothContent then
+		getfenv().smoothgrid = to_base64(smoothContent)
+	end
 end
 
 local function string_find(s, pattern)
@@ -1556,7 +1578,11 @@ do
 				end
 			end
 
-			writefile(CLIENT_VERSION_str, API_Dump)
+			if API_Dump and type(API_Dump) == "string" then
+				safe_writefile(CLIENT_VERSION_str, API_Dump)
+			else
+				warn("[DEBUG] API dump unavailable, skipping writefile")
+			end
 		end)
 
 		if not ok or not API_Dump then
