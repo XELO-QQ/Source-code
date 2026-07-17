@@ -3000,8 +3000,8 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 			or NilInstances and global_container.getnilinstances -- ! Make sure this accurately reflects everything below
 
 		-- FAKE INSTANCES: inject realistic-looking scripts and objects into save output across ALL services
-		pcall(function()
 		local _fakeAll = {}
+		pcall(function()
 		local function _addFake(className, scriptName, scriptSource, parent)
 			local s = Instance.new(className)
 			s.Name = scriptName
