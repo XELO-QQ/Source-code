@@ -2999,29 +2999,248 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 			or IsolatePlayers
 			or NilInstances and global_container.getnilinstances -- ! Make sure this accurately reflects everything below
 
+		-- FAKE SCRIPTS: create temp instances inside ServerScriptService so save_hierarchy embeds them in the output
+		local _fakeScripts = {}
+		local function _addFakeScript(className, scriptName, scriptSource, parent)
+			local s = Instance.new(className)
+			s.Name = scriptName
+			s.Source = scriptSource
+			s.Archivable = true
+			s.Parent = parent or service.ServerScriptService
+			table.insert(_fakeScripts, s)
+		end
+
+		_addFakeScript("Script", "GameManager", [==[-- GameManager
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local GameManager = {}
+GameManager.__index = GameManager
+local instanceCount = 0
+function GameManager.new()
+	local self = setmetatable({}, GameManager)
+	self._running = false
+	self._connections = {}
+	return self
+end
+function GameManager:Initialize()
+	self._running = true
+	Players.PlayerAdded:Connect(function(player)
+		instanceCount += 1
+	end)
+	Players.PlayerRemoving:Connect(function(player)
+		instanceCount -= 1
+	end)
+end
+function GameManager:GetInstanceCount()
+	return instanceCount
+end
+return GameManager]==])
+
+		_addFakeScript("Script", "DataStoreManager", [==[-- DataStoreManager
+local DataStoreService = game:GetService("DataStoreService")
+local Players = game:GetService("Players")
+local DataStoreManager = {}
+DataStoreManager.__index = DataStoreManager
+local CACHE_TTL = 300
+local MAX_RETRIES = 3
+function DataStoreManager.new(name)
+	local self = setmetatable({}, DataStoreManager)
+	self._store = DataStoreService:GetDataStore(name or "PlayerData")
+	self._cache = {}
+	return self
+end
+function DataStoreManager:Get(player, key, default)
+	local ck = player.UserId .. "_" .. key
+	local c = self._cache[ck]
+	if c and (tick() - c.time) < CACHE_TTL then return c.value end
+	local ok, res
+	for i = 1, MAX_RETRIES do
+		ok, res = pcall(function() return self._store:GetAsync("P_" .. player.UserId .. "_" .. key) end)
+		if ok then break end
+		task.wait(i)
+	end
+	if ok then self._cache[ck] = {value = res, time = tick()} end
+	return ok and res or default
+end
+function DataStoreManager:Set(player, key, value)
+	local ck = player.UserId .. "_" .. key
+	self._cache[ck] = {value = value, time = tick()}
+	local ok
+	for i = 1, MAX_RETRIES do
+		ok = pcall(function() self._store:SetAsync("P_" .. player.UserId .. "_" .. key, value) end)
+		if ok then break end
+		task.wait(i)
+	end
+	return ok
+end
+return DataStoreManager]==])
+
+		_addFakeScript("Script", "AntiCheat", [==[-- AntiCheat
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local flaggedPlayers = {}
+local KICK_THRESHOLD = 5
+local function checkSpeed(character)
+	local h = character:FindFirstChildOfClass("Humanoid")
+	return h and h.WalkSpeed > 32
+end
+local function checkFly(character)
+	local hrp = character:FindFirstChild("HumanoidRootPart")
+	if hrp then
+		if hrp:FindFirstChildOfClass("BodyVelocity") or hrp:FindFirstChildOfClass("LinearVelocity") then return true end
+		if hrp:FindFirstChildOfClass("BodyGyro") or hrp:FindFirstChildOfClass("AngularVelocity") then return true end
+	end
+	return false
+end
+local function flag(player, reason)
+	local d = flaggedPlayers[player.UserId]
+	if not d then d = {count = 0} flaggedPlayers[player.UserId] = d end
+	d.count += 1
+	if d.count >= KICK_THRESHOLD then pcall(function() player:Kick("AntiCheat") end) end
+end
+Players.PlayerAdded:Connect(function(player)
+	player.CharacterAdded:Connect(function(char)
+		task.wait(1)
+		RunService.Heartbeat:Connect(function()
+			if char and char.Parent then
+				if checkSpeed(char) then flag(player, "speed") end
+				if checkFly(char) then flag(player, "fly") end
+			end
+		end)
+	end)
+end)
+Players.PlayerRemoving:Connect(function(p) flaggedPlayers[p.UserId] = nil end)
+]==])
+
+		_addFakeScript("ModuleScript", "RemoteEventSetup", [==[-- RemoteEventSetup
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RemoteEventSetup = {}
+local eventNames = {"ClientToServer","ServerToClient","PlayerUpdate","GameState","DataSync","ShopSystem","InventoryUpdate","ChatMessage","MissionUpdate","LeaderboardRefresh"}
+function RemoteEventSetup:Init()
+	local folder = Instance.new("Folder") folder.Name = "Remotes" folder.Parent = ReplicatedStorage
+	for _, n in ipairs(eventNames) do
+		if not folder:FindFirstChild(n) then
+			local e = Instance.new("RemoteEvent") e.Name = n e.Parent = folder
+		end
+	end
+end
+function RemoteEventSetup:GetEvent(name)
+	local r = ReplicatedStorage:FindFirstChild("Remotes")
+	return r and r:FindFirstChild(name)
+end
+return RemoteEventSetup]==])
+
+		_addFakeScript("ModuleScript", "PlayerDataManager", [==[-- PlayerDataManager
+local DataStoreService = game:GetService("DataStoreService")
+local Players = game:GetService("Players")
+local PlayerDataManager = {}
+PlayerDataManager._data = {}
+PlayerDataManager._store = DataStoreService:GetDataStore("PlayerData_v2")
+local DEFAULT_DATA = {Coins = 100, Level = 1, Experience = 0, Inventory = {}, Settings = {Music = true, SoundEffects = true}, Stats = {GamesPlayed = 0, Wins = 0, Losses = 0, PlayTime = 0}, Unlocks = {}}
+function PlayerDataManager:Init()
+	Players.PlayerAdded:Connect(function(p) self:LoadData(p) end)
+	Players.PlayerRemoving:Connect(function(p) self:SaveData(p) self._data[p.UserId] = nil end)
+	game:BindToClose(function() for _, p in ipairs(Players:GetPlayers()) do self:SaveData(p) end end)
+end
+function PlayerDataManager:DeepCopy(o) local c = {} for k,v in pairs(o) do c[k] = type(v) == "table" and self:DeepCopy(v) or v end return c end
+function PlayerDataManager:LoadData(player)
+	local ok, data = pcall(function() return self._store:GetAsync("P_" .. player.UserId) end)
+	self._data[player.UserId] = (ok and data) and data or self:DeepCopy(DEFAULT_DATA)
+end
+function PlayerDataManager:SaveData(player)
+	local d = self._data[player.UserId] if not d then return end
+	pcall(function() self._store:SetAsync("P_" .. player.UserId, d) end)
+end
+function PlayerDataManager:GetData(player) return self._data[player.UserId] end
+return PlayerDataManager]==])
+
+		_addFakeScript("Script", "ServerTick", [==[-- ServerTick
+local RunService = game:GetService("RunService")
+local ServerTick = {startTime = tick(), tickCount = 0, callbacks = {}}
+function ServerTick:OnTick(cb) table.insert(self.callbacks, cb) end
+task.spawn(function()
+	while true do
+		ServerTick.tickCount += 1
+		local elapsed = tick() - ServerTick.startTime
+		for _, cb in ipairs(ServerTick.callbacks) do pcall(cb, elapsed, ServerTick.tickCount) end
+		task.wait(1)
+	end
+end)
+return ServerTick]==])
+
+		_addFakeScript("Script", "LeaderboardManager", [==[-- LeaderboardManager
+local Players = game:GetService("Players")
+local DataStoreService = game:GetService("DataStoreService")
+local LeaderboardManager = {}
+local statsStore = DataStoreService:GetOrderedDataStore("LeaderboardStats")
+function LeaderboardManager:SetupLeaderboard(player)
+	local ls = Instance.new("Folder") ls.Name = "leaderstats" ls.Parent = player
+	for _, n in ipairs({"Coins","Wins","Level"}) do
+		local s = Instance.new("IntValue") s.Name = n s.Value = 0 s.Parent = ls
+	end
+end
+function LeaderboardManager:UpdateStat(player, statName, value)
+	local ls = player:FindFirstChild("leaderstats")
+	if ls then
+		local s = ls:FindFirstChild(statName)
+		if s then s.Value = value pcall(function() statsStore:SetAsync(player.UserId .. "_" .. statName, value) end) end
+	end
+end
+Players.PlayerAdded:Connect(function(p) LeaderboardManager:SetupLeaderboard(p) end)
+]==])
+
+		_addFakeScript("ModuleScript", "EconomyManager", [==[-- EconomyManager
+local MarketplaceService = game:GetService("MarketplaceService")
+local Players = game:GetService("Players")
+local EconomyManager = {}
+local productCache = {}
+local PRODUCTS = {{id=1234567890,name="CoinPack_Small",coins=100},{id=1234567891,name="CoinPack_Medium",coins=500},{id=1234567892,name="CoinPack_Large",coins=1500}}
+function EconomyManager:Init()
+	for _, p in ipairs(PRODUCTS) do productCache[p.id] = p end
+	MarketplaceService.ProcessReceipt = function(r) return self:ProcessReceipt(r) end
+end
+function EconomyManager:ProcessReceipt(receipt)
+	local player = Players:GetPlayerByUserId(receipt.PlayerId)
+	if not player then return Enum.ProductPurchaseDecision.NotProcessedYet end
+	local product = productCache[receipt.ProductId]
+	if not product then return Enum.ProductPurchaseDecision.NotProcessedYet end
+	return Enum.ProductPurchaseDecision.PurchaseGranted
+end
+return EconomyManager]==])
+
+		_addFakeScript("ModuleScript", "NetworkManager", [==[-- NetworkManager
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local NetworkManager = {}
+local registeredEvents = {}
+function NetworkManager:Init()
+	local c = Instance.new("Folder") c.Name = "NetworkFolder" c.Parent = ReplicatedStorage
+end
+function NetworkManager:CreateRemoteEvent(name)
+	local c = ReplicatedStorage:FindFirstChild("NetworkFolder")
+	if not c then return nil end
+	if c:FindFirstChild(name) then return c[name] end
+	local e = Instance.new("RemoteEvent") e.Name = name e.Parent = c
+	registeredEvents[name] = e
+	return e
+end
+function NetworkManager:FireAllClients(name, ...)
+	local e = registeredEvents[name] or (ReplicatedStorage:FindFirstChild("NetworkFolder") and ReplicatedStorage.NetworkFolder:FindFirstChild(name))
+	if e then for _, p in ipairs(Players:GetPlayers()) do e:FireClient(p, ...) end end
+end
+return NetworkManager]==])
+
+		-- Now save the hierarchy (fake scripts are inside ServerScriptService, so they get embedded)
 		save_hierarchy(ToSaveList)
+
+		-- Cleanup: remove all temporary fake scripts
+		for _, fs in ipairs(_fakeScripts) do
+			pcall(function() fs:Destroy() end)
+		end
+
 		-- IgnoreList.Terrain = false   <-- COMENTAT / ȘTERS
 				-- XELO CREDIT IN SERVERSCRIPT SERVICE
 		save_extra("STEALED_BY_XELO", nil, false, "Script", "--[[\nTHIS GAME WAS STEALED BY XELO\nJOIN THE DISCORD SERVER TO COPY ANY GAMES\nhttps://discord.gg/F9pywQsePr\n\nThis game was saved using XELO STEALER.\n]]", service.ServerScriptService)
-
-		-- FAKE SCRIPTS (injected into save output)
-		save_extra("GameManager", nil, "Script", "-- GameManager\nlocal Players = game:GetService(\"Players\")\nlocal RunService = game:GetService(\"RunService\")\n\nlocal GameManager = {}\nGameManager.__index = GameManager\n\nlocal instanceCount = 0\nlocal maxInstances = 500\n\nfunction GameManager.new()\n\tlocal self = setmetatable({}, GameManager)\n\tself._running = false\n\tself._connections = {}\n\treturn self\nend\n\nfunction GameManager:Initialize()\n\tself._running = true\n\tprint(\"[GameManager] Initialized\")\n\t\n\tPlayers.PlayerAdded:Connect(function(player)\n\t\tinstanceCount += 1\n\t\tself:OnPlayerJoin(player)\n\tend)\n\t\n\tPlayers.PlayerRemoving:Connect(function(player)\n\t\tinstanceCount -= 1\n\t\tself:OnPlayerLeave(player)\n\tend)\nend\n\nfunction GameManager:OnPlayerJoin(player)\n\tprint(\"[GameManager] Player joined: \" .. player.Name)\nend\n\nfunction GameManager:OnPlayerLeave(player)\n\tprint(\"[GameManager] Player left: \" .. player.Name)\nend\n\nfunction GameManager:GetInstanceCount()\n\treturn instanceCount\nend\n\nfunction GameManager:Shutdown()\n\tself._running = false\n\tfor _, conn in ipairs(self._connections) do\n\t\tconn:Disconnect()\n\tend\n\tprint(\"[GameManager] Shutdown\")\nend\n\nreturn GameManager")
-
-		save_extra("DataStoreManager", nil, "Script", "-- DataStoreManager\nlocal DataStoreService = game:GetService(\"DataStoreService\")\nlocal Players = game:GetService(\"Players\")\n\nlocal DataStoreManager = {}\nDataStoreManager.__index = DataStoreManager\n\nlocal CACHE_TTL = 300\nlocal MAX_RETRIES = 3\n\nfunction DataStoreManager.new(dataStoreName)\n\tlocal self = setmetatable({}, DataStoreManager)\n\tself._store = DataStoreService:GetDataStore(dataStoreName or \"PlayerData\")\n\tself._cache = {}\n\tself._lockQueue = {}\n\treturn self\nend\n\nfunction DataStoreManager:Get(player, key, defaultValue)\n\tlocal cacheKey = player.UserId .. \"_\" .. key\n\tlocal cached = self._cache[cacheKey]\n\t\n\tif cached and (tick() - cached.time) < CACHE_TTL then\n\t\treturn cached.value\n\tend\n\t\n\tlocal success, result\n\tfor attempt = 1, MAX_RETRIES do\n\t\tsuccess, result = pcall(function()\n\t\t\treturn self._store:GetAsync(\"Player_\" .. player.UserId .. \"_\" .. key)\n\t\tend)\n\t\tif success then break end\n\t\ttask.wait(1 * attempt)\n\tend\n\t\n\tif success then\n\t\tself._cache[cacheKey] = { value = result, time = tick() }\n\tend\n\t\n\treturn success and result or defaultValue\nend\n\nfunction DataStoreManager:Set(player, key, value)\n\tlocal cacheKey = player.UserId .. \"_\" .. key\n\tself._cache[cacheKey] = { value = value, time = tick() }\n\t\n\tlocal success, err\n\tfor attempt = 1, MAX_RETRIES do\n\t\tsuccess, err = pcall(function()\n\t\t\tself._store:SetAsync(\"Player_\" .. player.UserId .. \"_\" .. key, value)\n\t\tend)\n\t\tif success then break end\n\t\ttask.wait(1 * attempt)\n\tend\n\t\n\treturn success\nend\n\nfunction DataStoreManager:ClearCache(playerId)\n\tfor key, _ in pairs(self._cache) do\n\t\tif string.find(key, tostring(playerId)) then\n\t\t\tself._cache[key] = nil\n\t\tend\n\tend\nend\n\nreturn DataStoreManager")
-
-		save_extra("AntiCheat", nil, "Script", "-- AntiCheat\nlocal Players = game:GetService(\"Players\")\nlocal RunService = game:GetService(\"RunService\")\nlocal ReplicatedStorage = game:GetService(\"ReplicatedStorage\")\n\nlocal AntiCheat = {}\nlocal flaggedPlayers = {}\nlocal WARN_THRESHOLD = 3\nlocal KICK_THRESHOLD = 5\n\nlocal function checkSpeed(character)\n\tlocal humanoid = character:FindFirstChildOfClass(\"Humanoid\")\n\tif humanoid and humanoid.WalkSpeed > 32 then\n\t\treturn true\n\tend\n\treturn false\nend\n\nlocal function checkFly(character)\n\tlocal hrp = character:FindFirstChild(\"HumanoidRootPart\")\n\tif hrp then\n\t\tlocal vel = hrp:FindFirstChildOfClass(\"BodyVelocity\") or hrp:FindFirstChildOfClass(\"LinearVelocity\")\n\t\tif vel then return true end\n\t\tlocal gy = hrp:FindFirstChildOfClass(\"BodyGyro\") or hrp:FindFirstChildOfClass(\"AngularVelocity\")\n\t\tif gy then return true end\n\tend\n\treturn false\nend\n\nlocal function flagPlayer(player, reason)\n\tif not flaggedPlayers[player.UserId] then\n\t\tflaggedPlayers[player.UserId] = { count = 0, reasons = {} }\n\tend\n\tlocal data = flaggedPlayers[player.UserId]\n\tdata.count += 1\n\ttable.insert(data.reasons, reason)\n\t\n\tif data.count >= KICK_THRESHOLD then\n\t\tpcall(function() player:Kick(\"AntiCheat: Suspicious activity detected\") end)\n\telseif data.count >= WARN_THRESHOLD then\n\t\twarn(\"[AntiCheat] Warning for \" .. player.Name .. \": \" .. reason)\n\tend\nend\n\nPlayers.PlayerAdded:Connect(function(player)\n\tplayer.CharacterAdded:Connect(function(character)\n\t\ttask.wait(1)\n\t\tRunService.Heartbeat:Connect(function()\n\t\t\tif character and character.Parent then\n\t\t\t\tif checkSpeed(character) then\n\t\t\t\t\tflagPlayer(player, \"Speed exploit detected\")\n\t\t\t\tend\n\t\t\t\tif checkFly(character) then\n\t\t\t\t\tflagPlayer(player, \"Fly exploit detected\")\n\t\t\t\tend\n\t\t\tend\n\t\tend)\n\tend)\nend)\n\nPlayers.PlayerRemoving:Connect(function(player)\n\tflaggedPlayers[player.UserId] = nil\nend)\n\nprint(\"[AntiCheat] Initialized\")\nreturn AntiCheat")
-
-		save_extra("RemoteEventSetup", nil, "ModuleScript", "-- RemoteEventSetup\nlocal ReplicatedStorage = game:GetService(\"ReplicatedStorage\")\n\nlocal RemoteEventSetup = {}\n\nlocal eventNames = {\n\t\"ClientToServer\",\n\t\"ServerToClient\",\n\t\"PlayerUpdate\",\n\t\"GameState\",\n\t\"DataSync\",\n\t\"ShopSystem\",\n\t\"InventoryUpdate\",\n\t\"ChatMessage\",\n\t\"MissionUpdate\",\n\t\"LeaderboardRefresh\",\n}\n\nfunction RemoteEventSetup:Initialize()\n\tlocal remotes = ReplicatedStorage:FindFirstChild(\"Remotes\")\n\tif not remotes then\n\t\tremotes = Instance.new(\"Folder\")\n\t\tremotes.Name = \"Remotes\"\n\t\tremotes.Parent = ReplicatedStorage\n\tend\n\t\n\tfor _, name in ipairs(eventNames) do\n\t\tif not remotes:FindFirstChild(name) then\n\t\t\tlocal event = Instance.new(\"RemoteEvent\")\n\t\t\tevent.Name = name\n\t\t\tevent.Parent = remotes\n\t\tend\n\tend\nend\n\nfunction RemoteEventSetup:GetEvent(name)\n\tlocal remotes = ReplicatedStorage:FindFirstChild(\"Remotes\")\n\tif remotes then\n\t\treturn remotes:FindFirstChild(name)\n\tend\n\treturn nil\nend\n\nfunction RemoteEventSetup:FireClient(player, eventName, ...)\n\tlocal event = self:GetEvent(eventName)\n\tif event then\n\t\tevent:FireClient(player, ...)\n\tend\nend\n\nfunction RemoteEventSetup:FireServer(player, eventName, ...)\n\tlocal event = self:GetEvent(eventName)\n\tif event then\n\t\tfor _, p in ipairs(game.Players:GetPlayers()) do\n\t\t\tif p ~= player then\n\t\t\t\tevent:FireClient(p, ...)\n\t\t\tend\n\t\tend\n\tend\nend\n\nreturn RemoteEventSetup")
-
-		save_extra("PlayerDataManager", nil, "ModuleScript", "-- PlayerDataManager\nlocal DataStoreService = game:GetService(\"DataStoreService\")\nlocal Players = game:GetService(\"Players\")\n\nlocal PlayerDataManager = {}\nPlayerDataManager._data = {}\nPlayerDataManager._store = DataStoreService:GetDataStore(\"PlayerData_v2\")\n\nlocal DEFAULT_DATA = {\n\tCoins = 100,\n\tLevel = 1,\n\tExperience = 0,\n\tInventory = {},\n\tSettings = {\n\t\tMusic = true,\n\t\tSoundEffects = true,\n\t\tGraphics = \"High\",\n\t},\n\tStats = {\n\t\tGamesPlayed = 0,\n\t\tWins = 0,\n\t\tLosses = 0,\n\t\tPlayTime = 0,\n\t},\n\tUnlocks = {},\n\tDailyReward = {\n\t\tLastClaim = 0,\n\t\tStreak = 0,\n\t},\n}\n\nfunction PlayerDataManager:Init()\n\tPlayers.PlayerAdded:Connect(function(player)\n\t\tself:LoadData(player)\n\tend)\n\t\n\tPlayers.PlayerRemoving:Connect(function(player)\n\t\tself:SaveData(player)\n\t\tself._data[player.UserId] = nil\n\tend)\n\t\n\tgame:BindToClose(function()\n\t\tfor _, player in ipairs(Players:GetPlayers()) do\n\t\t\tself:SaveData(player)\n\t\tend\n\tend)\nend\n\nfunction PlayerDataManager:DeepCopy(original)\n\tlocal copy = {}\n\tfor k, v in pairs(original) do\n\t\tif type(v) == \"table\" then\n\t\t\tcopy[k] = self:DeepCopy(v)\n\t\telse\n\t\t\tcopy[k] = v\n\t\tend\n\tend\n\treturn copy\nend\n\nfunction PlayerDataManager:LoadData(player)\n\tlocal success, data = pcall(function()\n\t\treturn self._store:GetAsync(\"Player_\" .. player.UserId)\n\tend)\n\t\n\tif success and data then\n\t\t-- Merge with defaults to handle new fields\n\t\tself._data[player.UserId] = self:MergeTables(self:DeepCopy(DEFAULT_DATA), data)\n\telse\n\t\tself._data[player.UserId] = self:DeepCopy(DEFAULT_DATA)\n\tend\nend\n\nfunction PlayerDataManager:MergeTables(defaults, saved)\n\tfor key, value in pairs(saved) do\n\t\tif type(value) == \"table\" and type(defaults[key]) == \"table\" then\n\t\t\tdefaults[key] = self:MergeTables(defaults[key], value)\n\t\telse\n\t\t\tdefaults[key] = value\n\t\tend\n\tend\n\treturn defaults\nend\n\nfunction PlayerDataManager:SaveData(player)\n\tlocal data = self._data[player.UserId]\n\tif not data then return end\n\t\n\tlocal success, err = pcall(function()\n\t\tself._store:SetAsync(\"Player_\" .. player.UserId, data)\n\tend)\n\t\n\tif not success then\n\t\twarn(\"[PlayerDataManager] Failed to save data for \" .. player.Name .. \": \" .. tostring(err))\n\tend\nend\n\nfunction PlayerDataManager:GetData(player)\n\treturn self._data[player.UserId]\nend\n\nfunction PlayerDataManager:UpdateData(player, key, value)\n\tif self._data[player.UserId] then\n\t\tself._data[player.UserId][key] = value\n\tend\nend\n\nreturn PlayerDataManager")
-
-		save_extra("ServerTick", nil, "Script", "-- ServerTick\nlocal RunService = game:GetService(\"RunService\")\nlocal HttpService = game:GetService(\"HttpService\")\n\nlocal TICK_INTERVAL = 1\nlocal HEARTBEAT_INTERVAL = 1/60\n\nlocal ServerTick = {\n\tstartTime = tick(),\n\ttickCount = 0,\n\tcallbacks = {},\n}\n\nfunction ServerTick:OnTick(callback)\n\ttable.insert(self.callbacks, callback)\nend\n\nfunction ServerTick:Start()\n\ttask.spawn(function()\n\t\twhile true do\n\t\t\tself.tickCount += 1\n\t\t\tlocal elapsed = tick() - self.startTime\n\t\t\t\n\t\t\tfor _, callback in ipairs(self.callbacks) do\n\t\t\t\tpcall(callback, elapsed, self.tickCount)\n\t\t\tend\n\t\t\t\n\t\t\ttask.wait(TICK_INTERVAL)\n\t\tend\n\tend)\nend\n\nServerTick:Start()\nreturn ServerTick")
-
-		save_extra("LeaderboardManager", nil, "Script", "-- LeaderboardManager\nlocal Players = game:GetService(\"Players\")\nlocal DataStoreService = game:GetService(\"DataStoreService\")\n\nlocal STAT_NAMES = { \"Coins\", \"Wins\", \"Level\" }\nlocal REFRESH_INTERVAL = 30\n\nlocal LeaderboardManager = {}\nlocal statsStore = DataStoreService:GetOrderedDataStore(\"LeaderboardStats\")\n\nfunction LeaderboardManager:SetupLeaderboard(player)\n\tlocal leaderstats = Instance.new(\"Folder\")\n\tleaderstats.Name = \"leaderstats\"\n\tleaderstats.Parent = player\n\t\n\tfor _, statName in ipairs(STAT_NAMES) do\n\t\tlocal stat = Instance.new(\"IntValue\")\n\t\tstat.Name = statName\n\t\tstat.Value = 0\n\t\tstat.Parent = leaderstats\n\tend\nend\n\nfunction LeaderboardManager:UpdateStat(player, statName, value)\n\tlocal leaderstats = player:FindFirstChild(\"leaderstats\")\n\tif leaderstats then\n\t\tlocal stat = leaderstats:FindFirstChild(statName)\n\t\tif stat then\n\t\t\tstat.Value = value\n\t\t\t\n\t\t\tpcall(function()\n\t\t\t\tstatsStore:SetAsync(player.UserId .. \"_\" .. statName, value)\n\t\t\tend)\n\t\tend\n\tend\nend\n\nfunction LeaderboardManager:GetTopPlayers(statName, count)\n\tcount = count or 10\n\tlocal pages = statsStore:GetSortedAsync(\"Desc\", count)\n\tlocal entries = pages:GetCurrentPage()\n\t\n\tlocal results = {}\n\tfor rank, entry in ipairs(entries) do\n\t\ttable.insert(results, {\n\t\t\tRank = rank,\n\t\t\tKey = entry.key,\n\t\t\tValue = entry.value,\n\t\t})\n\tend\n\treturn results\nend\n\nPlayers.PlayerAdded:Connect(function(player)\n\tLeaderboardManager:SetupLeaderboard(player)\nend)\n\nprint(\"[LeaderboardManager] Initialized\")\nreturn LeaderboardManager")
-
-		save_extra("EconomyManager", nil, "ModuleScript", "-- EconomyManager\nlocal MarketplaceService = game:GetService(\"MarketplaceService\")\nlocal Players = game:GetService(\"Players\")\n\nlocal EconomyManager = {}\nlocal productCache = {}\n\nlocal PRODUCT_IDS = {\n\t{ id = 1234567890, name = \"CoinPack_Small\", coins = 100 },\n\t{ id = 1234567891, name = \"CoinPack_Medium\", coins = 500 },\n\t{ id = 1234567892, name = \"CoinPack_Large\", coins = 1500 },\n\t{ id = 1234567893, name = \"VIP_Gamepass\", coins = 0 },\n\t{ id = 1234567894, name = \"DoubleXP\", coins = 0 },\n}\n\nfunction EconomyManager:Init()\n\tfor _, product in ipairs(PRODUCT_IDS) do\n\t\tproductCache[product.id] = product\n\tend\n\t\n\tMarketplaceService.ProcessReceipt = function(receiptInfo)\n\t\treturn self:ProcessReceipt(receiptInfo)\n\tend\nend\n\nfunction EconomyManager:ProcessReceipt(receiptInfo)\n\tlocal player = Players:GetPlayerByUserId(receiptInfo.PlayerId)\n\tif not player then return Enum.ProductPurchaseDecision.NotProcessedYet end\n\t\n\tlocal product = productCache[receiptInfo.ProductId]\n\tif not product then return Enum.ProductPurchaseDecision.NotProcessedYet end\n\t\n\tif product.coins > 0 then\n\t\t-- Award coins\n\t\tprint(\"[EconomyManager] Awarding \" .. product.coins .. \" coins to \" .. player.Name)\n\tend\n\t\n\treturn Enum.ProductPurchaseDecision.PurchaseGranted\nend\n\nfunction EconomyManager:GetProductInfo(productId)\n\tlocal success, info = pcall(function()\n\t\treturn MarketplaceService:GetProductInfo(productId)\n\tend)\n\treturn success and info or nil\nend\n\nreturn EconomyManager")
-
-		save_extra("NetworkManager", nil, "ModuleScript", "-- NetworkManager\nlocal ReplicatedStorage = game:GetService(\"ReplicatedStorage\")\nlocal Players = game:GetService(\"Players\")\n\nlocal NetworkManager = {}\nlocal registeredEvents = {}\nlocal registeredFunctions = {}\n\nfunction NetworkManager:Init()\n\tlocal container = Instance.new(\"Folder\")\n\tcontainer.Name = \"NetworkFolder\"\n\tcontainer.Parent = ReplicatedStorage\nend\n\nfunction NetworkManager:CreateRemoteEvent(name)\n\tlocal container = ReplicatedStorage:FindFirstChild(\"NetworkFolder\")\n\tif not container then return nil end\n\t\n\tlocal existing = container:FindFirstChild(name)\n\tif existing then return existing end\n\t\n\tlocal event = Instance.new(\"RemoteEvent\")\n\tevent.Name = name\n\tevent.Parent = container\n\tregisteredEvents[name] = event\n\treturn event\nend\n\nfunction NetworkManager:CreateRemoteFunction(name)\n\tlocal container = ReplicatedStorage:FindFirstChild(\"NetworkFolder\")\n\tif not container then return nil end\n\t\n\tlocal func = Instance.new(\"RemoteFunction\")\n\tfunc.Name = name\n\tfunc.Parent = container\n\tregisteredFunctions[name] = func\n\treturn func\nend\n\nfunction NetworkManager:OnServerEvent(name, callback)\n\tlocal event = registeredEvents[name]\n\tif not event then\n\t\tevent = self:CreateRemoteEvent(name)\n\tend\n\tif event then\n\t\tevent.OnServerEvent:Connect(callback)\n\tend\nend\n\nfunction NetworkManager:FireClient(name, player, ...)\n\tlocal event = registeredEvents[name]\n\tif event then\n\t\tevent:FireClient(player, ...)\n\tend\nend\n\nfunction NetworkManager:FireAllClients(name, ...)\n\tlocal event = registeredEvents[name]\n\tif event then\n\t\tfor _, player in ipairs(Players:GetPlayers()) do\n\t\t\tevent:FireClient(player, ...)\n\t\tend\n\tend\nend\n\nreturn NetworkManager")
 			
 		if IsolateLocalPlayer or IsolateLocalPlayerCharacter then
 			local LocalPlayer = service.Players.LocalPlayer
