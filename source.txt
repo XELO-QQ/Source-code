@@ -4253,52 +4253,6 @@ InputManager:Bind("Inventory", Enum.KeyCode.E, function(a, s) end)
 InputManager:Bind("Map", Enum.KeyCode.M, function(a, s) end)
 return InputManager]==], _SPS)
 
-		_addFake("LocalScript", "CameraController", [==[-- CameraController
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
-local CameraController = {}
-local LocalPlayer = Players.LocalPlayer
-local camera = workspace.CurrentCamera
-local cameraOffset = Vector3.new(0, 5, 15)
-local lookAt = Vector3.new(0, 0, 0)
-local smoothness = 0.1
-local zoomLevel = 1
-local minZoom = 0.5
-local maxZoom = 3
-local shakeAmount = 0
-local shakeDuration = 0
-function CameraController:SetMode(mode)
-	if mode == "ThirdPerson" then
-		camera.CameraType = Enum.CameraType.Scriptable
-	elseif mode == "FirstPerson" then
-		camera.CameraType = Enum.CameraType.Custom
-		camera.CameraSubject = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-	elseif mode == "TopDown" then
-		camera.CameraType = Enum.CameraType.Scriptable
-		cameraOffset = Vector3.new(0, 30, 0)
-	end
-end
-function CameraController:Shake(amount, duration)
-	shakeAmount = amount
-	shakeDuration = duration
-end
-function CameraController:Zoom(delta)
-	zoomLevel = math.max(minZoom, math.min(maxZoom, zoomLevel + delta))
-end
-RunService.RenderStepped:Connect(function(dt)
-	if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-		lookAt = LocalPlayer.Character.HumanoidRootPart.Position
-	end
-	local targetPos = lookAt + cameraOffset * zoomLevel
-	if shakeDuration > 0 then
-		targetPos += Vector3.new(math.random(-1,1), math.random(-1,1), math.random(-1,1)) * shakeAmount
-		shakeDuration -= dt
-	end
-	camera.CFrame = camera.CFrame:Lerp(CFrame.new(targetPos, lookAt), smoothness)
-end)
-return CameraController]==], _SPS)
-
 		_addFake("LocalScript", "AudioManager", [==[-- AudioManager
 local SoundService = game:GetService("SoundService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
