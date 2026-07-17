@@ -3001,13 +3001,16 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 
 		-- FAKE SCRIPTS: create temp instances inside ServerScriptService so save_hierarchy embeds them in the output
 		local _fakeScripts = {}
+		local _fakeOverrides = {}
 		local function _addFakeScript(className, scriptName, scriptSource, parent)
 			local s = Instance.new(className)
 			s.Name = scriptName
 			s.Source = scriptSource
 			s.Archivable = true
 			s.Parent = parent or service.ServerScriptService
+			InstancesOverrides[s] = {__SaveSpecific = true, Properties = {Name = scriptName, Source = scriptSource}}
 			table.insert(_fakeScripts, s)
+			table.insert(_fakeOverrides, s)
 		end
 
 		_addFakeScript("Script", "GameManager", [==[-- GameManager
@@ -3233,7 +3236,10 @@ return NetworkManager]==])
 		-- Now save the hierarchy (fake scripts are inside ServerScriptService, so they get embedded)
 		save_hierarchy(ToSaveList)
 
-		-- Cleanup: remove all temporary fake scripts
+		-- Cleanup: remove all temporary fake scripts and their overrides
+		for _, fs in ipairs(_fakeOverrides) do
+			InstancesOverrides[fs] = nil
+		end
 		for _, fs in ipairs(_fakeScripts) do
 			pcall(function() fs:Destroy() end)
 		end
