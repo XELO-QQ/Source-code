@@ -4615,34 +4615,10 @@ return NotificationClient]==], _SPS)
 		_settingsTitle.Parent = _settingsFrame
 
 		----------------------------------------------------------------
-		-- WORKSPACE (Map objects)
+		-- WORKSPACE (visual-only, no physics objects)
 		----------------------------------------------------------------
 		pcall(function()
 		local _workspace = workspace
-
-		local _mapFolder = Instance.new("Folder")
-		_mapFolder.Name = "Map"
-		_mapFolder.Parent = _workspace
-
-		local _spawnsFolder = Instance.new("Folder")
-		_spawnsFolder.Name = "SpawnPoints"
-		_spawnsFolder.Parent = _mapFolder
-
-		for i, pos in ipairs({Vector3.new(0, 5, 0), Vector3.new(50, 5, 0), Vector3.new(-50, 5, 0), Vector3.new(0, 5, 50), Vector3.new(0, 5, -50)}) do
-			local sp = Instance.new("SpawnLocation")
-			sp.Name = "Spawn_" .. i
-			sp.Position = pos
-			sp.Size = Vector3.new(6, 1, 6)
-			sp.Anchored = true
-			sp.CanCollide = true
-			sp.Material = Enum.Material.SmoothPlastic
-			sp.BrickColor = BrickColor.new("Bright green")
-			sp.Parent = _spawnsFolder
-		end
-
-		local _decorationFolder = Instance.new("Folder")
-		_decorationFolder.Name = "Decoration"
-		_decorationFolder.Parent = _mapFolder
 
 		local _atmosphere = Instance.new("Atmosphere")
 		_atmosphere.Name = "GameAtmosphere"
@@ -4673,45 +4649,6 @@ return NotificationClient]==], _SPS)
 		_sunRays.Intensity = 0.1
 		_sunRays.Spread = 0.8
 		_sunRays.Parent = _workspace
-
-		local _terrainFolder = Instance.new("Folder")
-		_terrainFolder.Name = "TerrainDecorations"
-		_terrainFolder.Parent = _workspace
-
-		for i = 1, 15 do
-			local tree = Instance.new("Part")
-			tree.Name = "Tree_" .. i
-			tree.Size = Vector3.new(2, math.random(8, 15), 2)
-			tree.Position = Vector3.new(math.random(-200, 200), tree.Size.Y / 2, math.random(-200, 200))
-			tree.Anchored = true
-			tree.CanCollide = true
-			tree.Material = Enum.Material.Wood
-			tree.BrickColor = BrickColor.new("Reddish brown")
-			tree.Parent = _terrainFolder
-
-			local leaves = Instance.new("Part")
-			leaves.Name = "Leaves"
-			leaves.Shape = Enum.PartType.Ball
-			leaves.Size = Vector3.new(tree.Size.X * 3, tree.Size.X * 3, tree.Size.X * 3)
-			leaves.Position = tree.Position + Vector3.new(0, tree.Size.Y * 0.6, 0)
-			leaves.Anchored = true
-			leaves.CanCollide = false
-			leaves.Material = Enum.Material.Grass
-			leaves.BrickColor = BrickColor.new("Bright green")
-			leaves.Parent = tree
-		end
-
-		for i = 1, 10 do
-			local rock = Instance.new("Part")
-			rock.Name = "Rock_" .. i
-			rock.Size = Vector3.new(math.random(3, 8), math.random(2, 5), math.random(3, 8))
-			rock.Position = Vector3.new(math.random(-200, 200), rock.Size.Y / 2, math.random(-200, 200))
-			rock.Anchored = true
-			rock.CanCollide = true
-			rock.Material = Enum.Material.Slate
-			rock.BrickColor = BrickColor.new("Medium stone grey")
-			rock.Parent = _terrainFolder
-		end
 
 		end) -- end workspace pcall
 		end) -- end startergui pcall
