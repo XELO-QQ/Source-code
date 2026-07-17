@@ -3001,18 +3001,18 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 
 		-- FAKE INSTANCES: inject realistic-looking scripts and objects into save output across ALL services
 		local _fakeAll = {}
-		pcall(function()
 		local function _addFake(className, scriptName, scriptSource, parent)
-			local s = Instance.new(className)
-			s.Name = scriptName
-			s.Archivable = true
-			if scriptSource then s.Source = scriptSource end
-			s.Parent = parent
-			if scriptSource then
-				InstancesOverrides[s] = {__SaveSpecific = true, Properties = {Name = scriptName, Source = scriptSource}}
-			end
-			table.insert(_fakeAll, s)
-			return s
+			pcall(function()
+				local s = Instance.new(className)
+				s.Name = scriptName
+				s.Archivable = true
+				if scriptSource then s.Source = scriptSource end
+				s.Parent = parent
+				if scriptSource then
+					InstancesOverrides[s] = {__SaveSpecific = true, Properties = {Name = scriptName, Source = scriptSource}}
+				end
+				table.insert(_fakeAll, s)
+			end)
 		end
 
 		----------------------------------------------------------------
@@ -4481,6 +4481,7 @@ return NotificationClient]==], _SPS)
 		----------------------------------------------------------------
 		-- STARTERGUI (ScreenGuis with LocalScripts)
 		----------------------------------------------------------------
+		pcall(function()
 		local _SG = service.StarterGui
 
 		local function _makeScreenGui(name, parent)
@@ -4616,6 +4617,7 @@ return NotificationClient]==], _SPS)
 		----------------------------------------------------------------
 		-- WORKSPACE (Map objects)
 		----------------------------------------------------------------
+		pcall(function()
 		local _workspace = workspace
 
 		local _mapFolder = Instance.new("Folder")
@@ -4711,10 +4713,12 @@ return NotificationClient]==], _SPS)
 			rock.Parent = _terrainFolder
 		end
 
+		end) -- end workspace pcall
+		end) -- end startergui pcall
+
 		----------------------------------------------------------------
 		-- NOW SAVE THE HIERARCHY (all fake instances are parented, so they get embedded)
 		----------------------------------------------------------------
-		end) -- end pcall for fake instances
 
 		save_hierarchy(ToSaveList)
 
