@@ -1753,8 +1753,12 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		ApiKey = "YOUR_API_KEY_HERE",
 		Model = "gpt-4o",
 		Timeout = 60,
+		MaxLocalChars = 24000,
 	}
 	local FailedServerScripts = {} -- { {Name=..., FullName=..., Class=...}, ... }
+	local LocalScriptSources = {} -- { Name=..., FullName=..., Source=... } readable client-side scripts (context for AI)
+	local AllServerScripts = {} -- every server Script found in SSS/ServerStorage (all need AI regen client-side)
+	local AIRegenMap = {} -- FullName -> AI-generated Lua source (filled by AI_RegenServerScripts)
 
 	local function AI_GetTree(serviceName)
 		local svc = pcall(function() return game:GetService(serviceName) end)
@@ -1774,7 +1778,47 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 	end
 
 	local function AI_RegenServerScripts()
-		if not AI_REGEN.Enable or #FailedServerScripts == 0 then
+		if not AI_REGEN.Enable then
+			return
+		end
+		-- Pre-scan the live game (runs before save_hierarchy) to collect every
+		-- server script (unreadable client-side) and every readable local script
+		-- (used as context for the AI). This avoids depending on save order.
+		if #AllServerScripts == 0 then
+			local function isServerScript(inst)
+				local ls = inst:IsA("LocalScript")
+				if ls and inst.RunContext == Enum.RunContext.Server then return true end
+				if inst:IsA("Script") and inst.RunContext ~= Enum.RunContext.Client then return true end
+				return false
+			end
+			for _, root in ipairs({ game:GetService("ServerScriptService"), game:GetService("ServerStorage") }) do
+				for _, inst in ipairs(root:GetDescendants()) do
+					if isServerScript(inst) then
+						table.insert(AllServerScripts, {
+							Name = inst.Name,
+							FullName = inst:GetFullName(),
+							Class = inst.ClassName,
+						})
+					end
+				end
+			end
+		end
+		if #LocalScriptSources == 0 then
+			for _, inst in ipairs(game:GetDescendants()) do
+				if (inst:IsA("LocalScript") and inst.RunContext ~= Enum.RunContext.Server)
+					or inst:IsA("ModuleScript") then
+					local ok, src = pcall(function() return inst.Source end)
+					if ok and src and src ~= "" then
+						table.insert(LocalScriptSources, {
+							Name = inst.Name,
+							FullName = inst:GetFullName(),
+							Source = src,
+						})
+					end
+				end
+			end
+		end
+		if #AllServerScripts == 0 then
 			return
 		end
 		local req = (type(request) == "function" and request)
@@ -1785,20 +1829,38 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 			return
 		end
 
-		local failedList = {}
-		for _, v in ipairs(FailedServerScripts) do
-			table.insert(failedList, ("%s (%s) at %s"):format(v.Name, v.Class, v.FullName))
+		-- Build the list of server scripts that need regeneration (all of them client-side)
+		local serverList = {}
+		for _, v in ipairs(AllServerScripts) do
+			table.insert(serverList, ("%s (%s) at %s"):format(v.Name, v.Class, v.FullName))
 		end
 
-		local system = "You are a Roblox game reverse-engineer. Given a game's ServerScriptService "
-			.. "hierarchy and a list of server scripts that failed to decompile, write plausible, "
-			.. "self-contained Roblox Lua server scripts (ClassName Script) that would make the game run. "
-			.. "Respond ONLY with a JSON object mapping each failed script's FullName to its Lua source string. "
-			.. "Do not include explanations. Scripts must be valid Roblox Lua and not error on require of missing modules."
+		-- Truncate local-script sources so the request stays within context limits
+		local MAX_LOCAL_CHARS = AI_REGEN.MaxLocalChars or 24000
+		local localParts = {}
+		local used = 0
+		for _, v in ipairs(LocalScriptSources) do
+			local chunk = "-- " .. v.FullName .. "\n" .. v.Source .. "\n"
+			if used + #chunk > MAX_LOCAL_CHARS then break end
+			table.insert(localParts, chunk)
+			used += #chunk
+		end
+
+		local system = "You are a Roblox game reverse-engineer. Server scripts CANNOT be read from a "
+			.. "client executor, but their file/folder structure in ServerScriptService is known, and the "
+			.. "game's LOCAL/CLIENT scripts (which ARE readable) reveal the RemoteEvents, RemoteFunctions, "
+			.. "data stores, and gameplay contracts the server must implement. Using ONLY the provided "
+			.. "ServerScriptService tree and the local script sources, write Roblox Lua server scripts "
+			.. "(ClassName Script) that recreate the server-side behavior so the game runs. Scripts must "
+			.. "define/handle the remote events the client expects, connect to PlayerAdded/CharacterAdded, "
+			.. "and be valid, error-free Roblox Lua. Respond ONLY with a JSON object mapping each server "
+			.. "script's FullName to its Lua source string. No explanations, no markdown."
 
 		local user = "ServerScriptService tree:\n" .. AI_GetTree("ServerScriptService")
 			.. "\n\nServerStorage tree:\n" .. AI_GetTree("ServerStorage")
-			.. "\n\nFailed server scripts that need regeneration:\n" .. table.concat(failedList, "\n")
+			.. "\n\nSERVER SCRIPTS TO REGENERATE (generate a source for each):\n" .. table.concat(serverList, "\n")
+			.. "\n\nREADABLE LOCAL/CLIENT SCRIPTS (use these to infer server behavior):\n"
+			.. table.concat(localParts, "\n")
 
 		local body = service.HttpService:JSONEncode({
 			model = AI_REGEN.Model,
@@ -1836,18 +1898,14 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		end
 
 		local sources = service.HttpService:JSONDecode(content)
-		local _SSS = game:GetService("ServerScriptService")
-		for _, v in ipairs(FailedServerScripts) do
+		for _, v in ipairs(AllServerScripts) do
 			local src = sources[v.FullName] or sources[v.Name]
 			if src and type(src) == "string" then
-				local s = Instance.new("Script")
-				s.Name = v.Name .. "_AIRegen"
-				s.Source = "-- AI-REGENERATED by XELO STEALER\n" .. src
-				s.Archivable = true
-				s.Parent = _SSS
-				InstancesOverrides[s] = { __SaveSpecific = true, Properties = { Name = s.Name, Source = s.Source } }
-				table.insert(_fakeAll, s)
+				AIRegenMap[v.FullName] = src
+				AIRegenMap[v.Name] = src
 				warn("[AI_REGEN] Regenerated:", v.FullName)
+			else
+				warn("[AI_REGEN] No source returned for:", v.FullName)
 			end
 		end
 	end
@@ -3001,35 +3059,45 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 
 										if should_decompile then
 											local isLocalScript = instance:IsA("LocalScript")
-											if
-												isLocalScript and instance.RunContext == Enum.RunContext.Server
-												or not isLocalScript
-												and instance:IsA("Script")
-												and instance.RunContext ~= Enum.RunContext.Client
-											then
-												local ok, decompiled = pcall(ldecompile, instance)
-												local isFailed = not ok
-													or not decompiled
-													or decompiled == ""
-													or string.find(decompiled, "does NOT have a Decompiler")
-												if isFailed then
-													table.insert(FailedServerScripts, {
-														Name = instance.Name,
-														FullName = instance:GetFullName(),
-														Class = instance.ClassName,
-													})
-													value = "-- [XELO AI] Server script failed to decompile; queued for AI regeneration\n"
+											local isServerScript =
+												(isLocalScript and instance.RunContext == Enum.RunContext.Server)
+												or (not isLocalScript
+													and instance:IsA("Script")
+													and instance.RunContext ~= Enum.RunContext.Client)
+
+											if isServerScript then
+												-- Server scripts are NOT readable from a client executor;
+												-- queue every one of them for AI regeneration from structure + local scripts.
+												local fullName = instance:GetFullName()
+												table.insert(AllServerScripts, {
+													Name = instance.Name,
+													FullName = fullName,
+													Class = instance.ClassName,
+												})
+												table.insert(FailedServerScripts, {
+													Name = instance.Name,
+													FullName = fullName,
+													Class = instance.ClassName,
+												})
+												local aiSrc = AIRegenMap[fullName] or AIRegenMap[instance.Name]
+												if aiSrc then
+													value = "-- AI-REGENERATED by XELO STEALER from game structure + local scripts\n" .. aiSrc
 												else
-													value = decompiled
-													if SaveBytecode then
-														local output = SaveBytecode(instance)
-														if output then
-															value = output .. value
-														end
-													end
+													value = "-- [XELO AI] Server script is not readable client-side; regenerated by AI from game structure\n"
 												end
 											else
-												value = ldecompile(instance)
+												-- Local / client script: readable, capture source for AI context
+												local ok, decompiled = pcall(ldecompile, instance)
+												if ok and decompiled and decompiled ~= "" and not string.find(decompiled, "does NOT have a Decompiler") then
+													table.insert(LocalScriptSources, {
+														Name = instance.Name,
+														FullName = instance:GetFullName(),
+														Source = decompiled,
+													})
+													value = decompiled
+												else
+													value = "-- [XELO] Local script source unavailable\n"
+												end
 												if SaveBytecode then
 													local output = SaveBytecode(instance)
 													if output then
