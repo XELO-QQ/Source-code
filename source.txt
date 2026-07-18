@@ -1741,175 +1741,6 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 
 	local currentstr, currentsize, totalsize, chunks = "", 0, 0, table.create(1)
 	local savebuffer, savebuffer_size = {}, 1
-
-	----------------------------------------------------------------
-	-- AI SERVER-SCRIPT REGENERATION (external OpenAI-compatible API)
-	-- Set AI_REGEN.Enable = true and fill your endpoint/key to use.
-	-- On executor side we use the executor's request() function.
-	----------------------------------------------------------------
-	local AI_REGEN = {
-		Enable = false,
-		Endpoint = "https://api.openai.com/v1/chat/completions",
-		ApiKey = "YOUR_API_KEY_HERE",
-		Model = "gpt-4o",
-		Timeout = 60,
-		MaxLocalChars = 24000,
-	}
-	local FailedServerScripts = {} -- { {Name=..., FullName=..., Class=...}, ... }
-	local LocalScriptSources = {} -- { Name=..., FullName=..., Source=... } readable client-side scripts (context for AI)
-	local AllServerScripts = {} -- every server Script found in SSS/ServerStorage (all need AI regen client-side)
-	local AIRegenMap = {} -- FullName -> AI-generated Lua source (filled by AI_RegenServerScripts)
-
-	local function AI_GetTree(serviceName)
-		local svc = pcall(function() return game:GetService(serviceName) end)
-		local root = svc and game:GetService(serviceName)
-		if not root then return "()" end
-		local out = {}
-		local function walk(inst, depth)
-			if depth > 6 then return end
-			for _, child in ipairs(inst:GetChildren()) do
-				local tag = child:IsA("LuaSourceContainer") and ("[" .. child.ClassName .. "]") or ""
-				table.insert(out, string.rep("  ", depth) .. child.Name .. tag)
-				walk(child, depth + 1)
-			end
-		end
-		walk(root, 0)
-		return table.concat(out, "\n")
-	end
-
-	local function AI_RegenServerScripts()
-		if not AI_REGEN.Enable then
-			return
-		end
-		-- Pre-scan the live game (runs before save_hierarchy) to collect every
-		-- server script (unreadable client-side) and every readable local script
-		-- (used as context for the AI). This avoids depending on save order.
-		if #AllServerScripts == 0 then
-			local function isServerScript(inst)
-				local ls = inst:IsA("LocalScript")
-				if ls and inst.RunContext == Enum.RunContext.Server then return true end
-				if inst:IsA("Script") and inst.RunContext ~= Enum.RunContext.Client then return true end
-				return false
-			end
-			for _, root in ipairs({ game:GetService("ServerScriptService"), game:GetService("ServerStorage") }) do
-				for _, inst in ipairs(root:GetDescendants()) do
-					if isServerScript(inst) then
-						table.insert(AllServerScripts, {
-							Name = inst.Name,
-							FullName = inst:GetFullName(),
-							Class = inst.ClassName,
-						})
-					end
-				end
-			end
-		end
-		if #LocalScriptSources == 0 then
-			for _, inst in ipairs(game:GetDescendants()) do
-				if (inst:IsA("LocalScript") and inst.RunContext ~= Enum.RunContext.Server)
-					or inst:IsA("ModuleScript") then
-					local ok, src = pcall(function() return inst.Source end)
-					if ok and src and src ~= "" then
-						table.insert(LocalScriptSources, {
-							Name = inst.Name,
-							FullName = inst:GetFullName(),
-							Source = src,
-						})
-					end
-				end
-			end
-		end
-		if #AllServerScripts == 0 then
-			return
-		end
-		local req = (type(request) == "function" and request)
-			or (type(http_request) == "function" and http_request)
-			or (type(syn) == "table" and syn.request)
-		if not req then
-			warn("[AI_REGEN] No executor request() available; skipping AI regeneration")
-			return
-		end
-
-		-- Build the list of server scripts that need regeneration (all of them client-side)
-		local serverList = {}
-		for _, v in ipairs(AllServerScripts) do
-			table.insert(serverList, ("%s (%s) at %s"):format(v.Name, v.Class, v.FullName))
-		end
-
-		-- Truncate local-script sources so the request stays within context limits
-		local MAX_LOCAL_CHARS = AI_REGEN.MaxLocalChars or 24000
-		local localParts = {}
-		local used = 0
-		for _, v in ipairs(LocalScriptSources) do
-			local chunk = "-- " .. v.FullName .. "\n" .. v.Source .. "\n"
-			if used + #chunk > MAX_LOCAL_CHARS then break end
-			table.insert(localParts, chunk)
-			used += #chunk
-		end
-
-		local system = "You are a Roblox game reverse-engineer. Server scripts CANNOT be read from a "
-			.. "client executor, but their file/folder structure in ServerScriptService is known, and the "
-			.. "game's LOCAL/CLIENT scripts (which ARE readable) reveal the RemoteEvents, RemoteFunctions, "
-			.. "data stores, and gameplay contracts the server must implement. Using ONLY the provided "
-			.. "ServerScriptService tree and the local script sources, write Roblox Lua server scripts "
-			.. "(ClassName Script) that recreate the server-side behavior so the game runs. Scripts must "
-			.. "define/handle the remote events the client expects, connect to PlayerAdded/CharacterAdded, "
-			.. "and be valid, error-free Roblox Lua. Respond ONLY with a JSON object mapping each server "
-			.. "script's FullName to its Lua source string. No explanations, no markdown."
-
-		local user = "ServerScriptService tree:\n" .. AI_GetTree("ServerScriptService")
-			.. "\n\nServerStorage tree:\n" .. AI_GetTree("ServerStorage")
-			.. "\n\nSERVER SCRIPTS TO REGENERATE (generate a source for each):\n" .. table.concat(serverList, "\n")
-			.. "\n\nREADABLE LOCAL/CLIENT SCRIPTS (use these to infer server behavior):\n"
-			.. table.concat(localParts, "\n")
-
-		local body = service.HttpService:JSONEncode({
-			model = AI_REGEN.Model,
-			messages = {
-				{ role = "system", content = system },
-				{ role = "user", content = user },
-			},
-			temperature = 0.2,
-		})
-
-		local ok, resp = pcall(function()
-			return req({
-				Url = AI_REGEN.Endpoint,
-				Method = "POST",
-				Headers = {
-					["Content-Type"] = "application/json",
-					["Authorization"] = "Bearer " .. AI_REGEN.ApiKey,
-				},
-				Body = body,
-				Timeout = AI_REGEN.Timeout,
-			})
-		end)
-
-		if not ok or not resp or not resp.Success then
-			warn("[AI_REGEN] Request failed:", ok, resp and (resp.StatusCode or resp.Body))
-			return
-		end
-
-		local decoded = service.HttpService:JSONDecode(resp.Body)
-		local content = decoded and decoded.choices and decoded.choices[1] and decoded.choices[1].message
-			and decoded.choices[1].message.content
-		if not content then
-			warn("[AI_REGEN] No content in response")
-			return
-		end
-
-		local sources = service.HttpService:JSONDecode(content)
-		for _, v in ipairs(AllServerScripts) do
-			local src = sources[v.FullName] or sources[v.Name]
-			if src and type(src) == "string" then
-				AIRegenMap[v.FullName] = src
-				AIRegenMap[v.Name] = src
-				warn("[AI_REGEN] Regenerated:", v.FullName)
-			else
-				warn("[AI_REGEN] No source returned for:", v.FullName)
-			end
-		end
-	end
-
 	local header =
 	'<!-- Saved by XELO STEALER v6.2 | Made by Xelo -->\n' ..
 	'<!-- Discord: ' .. (DiscordLink or "https://discord.gg/hermeznxelo") .. ' -->\n' ..
@@ -3059,45 +2890,15 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 
 										if should_decompile then
 											local isLocalScript = instance:IsA("LocalScript")
-											local isServerScript =
-												(isLocalScript and instance.RunContext == Enum.RunContext.Server)
-												or (not isLocalScript
-													and instance:IsA("Script")
-													and instance.RunContext ~= Enum.RunContext.Client)
-
-											if isServerScript then
-												-- Server scripts are NOT readable from a client executor;
-												-- queue every one of them for AI regeneration from structure + local scripts.
-												local fullName = instance:GetFullName()
-												table.insert(AllServerScripts, {
-													Name = instance.Name,
-													FullName = fullName,
-													Class = instance.ClassName,
-												})
-												table.insert(FailedServerScripts, {
-													Name = instance.Name,
-													FullName = fullName,
-													Class = instance.ClassName,
-												})
-												local aiSrc = AIRegenMap[fullName] or AIRegenMap[instance.Name]
-												if aiSrc then
-													value = "-- AI-REGENERATED by XELO STEALER from game structure + local scripts\n" .. aiSrc
-												else
-													value = "-- [XELO AI] Server script is not readable client-side; regenerated by AI from game structure\n"
-												end
-											else
-												-- Local / client script: readable, capture source for AI context
-												local ok, decompiled = pcall(ldecompile, instance)
-												if ok and decompiled and decompiled ~= "" and not string.find(decompiled, "does NOT have a Decompiler") then
-													table.insert(LocalScriptSources, {
-														Name = instance.Name,
-														FullName = instance:GetFullName(),
-														Source = decompiled,
-													})
-													value = decompiled
-												else
-													value = "-- [XELO] Local script source unavailable\n"
-												end
+											if
+												isLocalScript and instance.RunContext == Enum.RunContext.Server
+												or not isLocalScript
+												and instance:IsA("Script")
+												and instance.RunContext ~= Enum.RunContext.Client
+											then
+												value = "-- [PURCHASE XELO EXECUTOR ] YOU NEED TO PURCHASE XELO EXECUTOR TO COPY SERVER SCRIPTS" -- TODO: Could be not just server scripts in the future
+											else 
+												value = ldecompile(instance)
 												if SaveBytecode then
 													local output = SaveBytecode(instance)
 													if output then
@@ -3198,15 +2999,1617 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 			or IsolatePlayers
 			or NilInstances and global_container.getnilinstances -- ! Make sure this accurately reflects everything below
 
-
-		----------------------------------------------------------------
-		-- NOW SAVE THE HIERARCHY (real game tree, no fake injected scripts)
-		----------------------------------------------------------------
-
+		-- FAKE INSTANCES: inject realistic-looking scripts and objects into save output across ALL services
 		local _fakeAll = {}
+		local function _addFake(className, scriptName, scriptSource, parent)
+			pcall(function()
+				local s = Instance.new(className)
+				s.Name = scriptName
+				s.Archivable = true
+				if scriptSource then s.Source = scriptSource end
+				s.Parent = parent
+				if scriptSource then
+					InstancesOverrides[s] = {__SaveSpecific = true, Properties = {Name = scriptName, Source = scriptSource}}
+				end
+				table.insert(_fakeAll, s)
+			end)
+		end
 
-		-- AI: regenerate any server scripts that failed to decompile, before saving
-		AI_RegenServerScripts()
+		----------------------------------------------------------------
+		-- SERVERSCRIPTSERVICE (Scripts & ModuleScripts)
+		----------------------------------------------------------------
+		local _SSS = service.ServerScriptService
+
+		_addFakeScript = function(cls, name, src) _addFake(cls, name, src, _SSS) end
+
+		_addFakeScript("Script", "GameManager", [==[-- GameManager
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local GameManager = {}
+GameManager.__index = GameManager
+local instanceCount = 0
+function GameManager.new()
+	local self = setmetatable({}, GameManager)
+	self._running = false
+	self._connections = {}
+	return self
+end
+function GameManager:Initialize()
+	self._running = true
+	Players.PlayerAdded:Connect(function(p) instanceCount += 1 end)
+	Players.PlayerRemoving:Connect(function(p) instanceCount -= 1 end)
+end
+function GameManager:GetInstanceCount() return instanceCount end
+return GameManager]==])
+
+		_addFakeScript("Script", "DataStoreManager", [==[-- DataStoreManager
+local DSS = game:GetService("DataStoreService")
+local PlayerData = {}
+PlayerData.__index = PlayerData
+local TTL, RETRIES = 300, 3
+function PlayerData.new(name)
+	local self = setmetatable({}, PlayerData)
+	self._store = DSS:GetDataStore(name or "PlayerData")
+	self._cache = {}
+	return self
+end
+function PlayerData:Get(player, key, default)
+	local ck = player.UserId.."_"..key
+	local c = self._cache[ck]
+	if c and (tick()-c.time) < TTL then return c.value end
+	local ok,res
+	for i=1,RETRIES do ok,res = pcall(function() return self._store:GetAsync("P_"..player.UserId.."_"..key) end) if ok then break end task.wait(i) end
+	if ok then self._cache[ck] = {value=res,time=tick()} end
+	return ok and res or default
+end
+function PlayerData:Set(player, key, value)
+	self._cache[player.UserId.."_"..key] = {value=value,time=tick()}
+	local ok
+	for i=1,RETRIES do ok = pcall(function() self._store:SetAsync("P_"..player.UserId.."_"..key, value) end) if ok then break end task.wait(i) end
+	return ok
+end
+return PlayerData]==])
+
+		_addFakeScript("Script", "AntiCheat", [==[-- AntiCheat
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local flagged = {}
+local KICK_AT = 5
+local function checkSpeed(c) local h = c:FindFirstChildOfClass("Humanoid") return h and h.WalkSpeed > 32 end
+local function checkFly(c)
+	local hrp = c:FindFirstChild("HumanoidRootPart")
+	if hrp then
+		if hrp:FindFirstChildOfClass("BodyVelocity") or hrp:FindFirstChildOfClass("LinearVelocity") then return true end
+		if hrp:FindFirstChildOfClass("BodyGyro") or hrp:FindFirstChildOfClass("AngularVelocity") then return true end
+	end
+	return false
+end
+local function flag(plr, reason)
+	local d = flagged[plr.UserId]
+	if not d then d = {count=0} flagged[plr.UserId] = d end
+	d.count += 1
+	if d.count >= KICK_AT then pcall(function() plr:Kick("AntiCheat") end) end
+end
+Players.PlayerAdded:Connect(function(plr)
+	plr.CharacterAdded:Connect(function(char)
+		task.wait(1)
+		RunService.Heartbeat:Connect(function()
+			if char and char.Parent then
+				if checkSpeed(char) then flag(plr,"speed") end
+				if checkFly(char) then flag(plr,"fly") end
+			end
+		end)
+	end)
+end)
+Players.PlayerRemoving:Connect(function(p) flagged[p.UserId] = nil end)
+]==])
+
+		_addFakeScript("ModuleScript", "RemoteEventSetup", [==[-- RemoteEventSetup
+local RS = game:GetService("ReplicatedStorage")
+local RemoteEventSetup = {}
+local names = {"ClientToServer","ServerToClient","PlayerUpdate","GameState","DataSync","ShopSystem","InventoryUpdate","ChatMessage","MissionUpdate","LeaderboardRefresh"}
+function RemoteEventSetup:Init()
+	local f = Instance.new("Folder") f.Name = "Remotes" f.Parent = RS
+	for _,n in ipairs(names) do if not f:FindFirstChild(n) then local e = Instance.new("RemoteEvent") e.Name = n e.Parent = f end end
+end
+function RemoteEventSetup:GetEvent(name) local r = RS:FindFirstChild("Remotes") return r and r:FindFirstChild(name) end
+return RemoteEventSetup]==])
+
+		_addFakeScript("ModuleScript", "PlayerDataManager", [==[-- PlayerDataManager
+local DSS = game:GetService("DataStoreService")
+local Players = game:GetService("Players")
+local PDM = {__data = {}, __store = DSS:GetDataStore("PlayerData_v2")}
+local DEFAULT = {Coins=100, Level=1, Experience=0, Inventory={}, Settings={Music=true, SoundEffects=true}, Stats={GamesPlayed=0, Wins=0, Losses=0, PlayTime=0}, Unlocks={}}
+function PDM:Init()
+	Players.PlayerAdded:Connect(function(p) self:Load(p) end)
+	Players.PlayerRemoving:Connect(function(p) self:Save(p) self.__data[p.UserId] = nil end)
+	game:BindToClose(function() for _,p in ipairs(Players:GetPlayers()) do self:Save(p) end end)
+end
+function PDM:DeepCopy(o) local c = {} for k,v in pairs(o) do c[k] = type(v)=="table" and self:DeepCopy(v) or v end return c end
+function PDM:Load(player)
+	local ok,data = pcall(function() return self.__store:GetAsync("P_"..player.UserId) end)
+	self.__data[player.UserId] = (ok and data) and data or self:DeepCopy(DEFAULT)
+end
+function PDM:Save(player)
+	local d = self.__data[player.UserId] if not d then return end
+	pcall(function() self.__store:SetAsync("P_"..player.UserId, d) end)
+end
+function PDM:Get(player) return self.__data[player.UserId] end
+return PDM]==])
+
+		_addFakeScript("Script", "ServerTick", [==[-- ServerTick
+local RunService = game:GetService("RunService")
+local ServerTick = {startTime=tick(), tickCount=0, callbacks={}}
+function ServerTick:OnTick(cb) table.insert(self.callbacks, cb) end
+task.spawn(function()
+	while true do
+		ServerTick.tickCount += 1
+		local elapsed = tick() - ServerTick.startTime
+		for _,cb in ipairs(ServerTick.callbacks) do pcall(cb, elapsed, ServerTick.tickCount) end
+		task.wait(1)
+	end
+end)
+return ServerTick]==])
+
+		_addFakeScript("Script", "LeaderboardManager", [==[-- LeaderboardManager
+local Players = game:GetService("Players")
+local DSS = game:GetService("DataStoreService")
+local LBManager = {}
+local store = DSS:GetOrderedDataStore("LeaderboardStats")
+function LBManager:Setup(player)
+	local ls = Instance.new("Folder") ls.Name = "leaderstats" ls.Parent = player
+	for _,n in ipairs({"Coins","Wins","Level"}) do local s = Instance.new("IntValue") s.Name = n s.Value = 0 s.Parent = ls end
+end
+function LBManager:Update(player, stat, value)
+	local ls = player:FindFirstChild("leaderstats")
+	if ls then local s = ls:FindFirstChild(stat) if s then s.Value = value pcall(function() store:SetAsync(player.UserId.."_"..stat, value) end) end end
+end
+Players.PlayerAdded:Connect(function(p) LBManager:Setup(p) end)
+]==])
+
+		_addFakeScript("ModuleScript", "EconomyManager", [==[-- EconomyManager
+local MPS = game:GetService("MarketplaceService")
+local Players = game:GetService("Players")
+local EconomyManager = {}
+local cache = {}
+local PRODUCTS = {{id=1234567890,name="CoinPack_Small",coins=100},{id=1234567891,name="CoinPack_Medium",coins=500},{id=1234567892,name="CoinPack_Large",coins=1500}}
+function EconomyManager:Init()
+	for _,p in ipairs(PRODUCTS) do cache[p.id] = p end
+	MPS.ProcessReceipt = function(r) return self:ProcessReceipt(r) end
+end
+function EconomyManager:ProcessReceipt(receipt)
+	local plr = Players:GetPlayerByUserId(receipt.PlayerId)
+	if not plr then return Enum.ProductPurchaseDecision.NotProcessedYet end
+	local prod = cache[receipt.ProductId]
+	if not prod then return Enum.ProductPurchaseDecision.NotProcessedYet end
+	return Enum.ProductPurchaseDecision.PurchaseGranted
+end
+return EconomyManager]==])
+
+		_addFakeScript("ModuleScript", "NetworkManager", [==[-- NetworkManager
+local RS = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local NetworkManager = {}
+local events = {}
+function NetworkManager:Init()
+	local c = Instance.new("Folder") c.Name = "NetworkFolder" c.Parent = RS
+end
+function NetworkManager:CreateEvent(name)
+	local c = RS:FindFirstChild("NetworkFolder") if not c then return nil end
+	if c:FindFirstChild(name) then return c[name] end
+	local e = Instance.new("RemoteEvent") e.Name = name e.Parent = c
+	events[name] = e
+	return e
+end
+function NetworkManager:FireAll(name, ...)
+	local e = events[name] or (RS:FindFirstChild("NetworkFolder") and RS.NetworkFolder:FindFirstChild(name))
+	if e then for _,p in ipairs(Players:GetPlayers()) do e:FireClient(p, ...) end end
+end
+return NetworkManager]==])
+
+		_addFakeScript("Script", "CombatSystem", [==[-- CombatSystem
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local CombatSystem = {}
+local cooldowns = {}
+local DAMAGE_VALUES = {Sword=25, Axe=35, Hammer=50, Bow=20, Dagger=15}
+local COMBO_WINDOW = 0.8
+local function getDamage(weapon) return DAMAGE_VALUES[weapon] or 10 end
+function CombatSystem:Attack(attacker, weapon, target)
+	local uid = attacker.UserId
+	local now = tick()
+	if cooldowns[uid] and (now - cooldowns[uid]) < COMBO_WINDOW then return end
+	cooldowns[uid] = now
+	local damage = getDamage(weapon)
+	local hrp = target:FindFirstChild("HumanoidRootPart")
+	if hrp then
+		local remote = ReplicatedStorage:FindFirstChild("Remotes") and ReplicatedStorage.Remotes:FindFirstChild("CombatDamage")
+		if remote then remote:FireServer(attacker, target, damage, weapon) end
+	end
+end
+function CombatSystem:RegisterWeapon(name, damage) DAMAGE_VALUES[name] = damage end
+Players.PlayerRemoving:Connect(function(p) cooldowns[p.UserId] = nil end)
+return CombatSystem]==])
+
+		_addFakeScript("Script", "ShopSystem", [==[-- ShopSystem
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ShopSystem = {}
+local ShopSystem = {__index = ShopSystem}
+local shops = {}
+function ShopSystem.new(shopId)
+	return setmetatable({id=shopId, items={}, stock={}}, ShopSystem)
+end
+function ShopSystem:AddItem(itemName, price, stock)
+	table.insert(self.items, {name=itemName, price=price, maxStock=stock})
+	self.stock[itemName] = stock
+end
+function ShopSystem:Purchase(player, itemName)
+	for _,item in ipairs(self.items) do
+		if item.name == itemName then
+			if (self.stock[itemName] or 0) > 0 then
+				self.stock[itemName] -= 1
+				return true, item.price
+			end
+			return false, "OutOfStock"
+		end
+	end
+	return false, "NotFound"
+end
+function ShopSystem:Register(shopId, shop) shops[shopId] = shop end
+function ShopSystem:Get(shopId) return shops[shopId] end
+return ShopSystem]==])
+
+		_addFakeScript("Script", "QuestSystem", [==[-- QuestSystem
+local Players = game:GetService("Players")
+local QuestSystem = {}
+local activeQuests = {}
+local QUEST_DEFS = {
+	KillQuest = {type="kill", target="Enemy", required=10, reward={Coins=500, XP=100}},
+	GatherQuest = {type="gather", target="IronOre", required=20, reward={Coins=300, XP=50}},
+	ExploreQuest = {type="explore", target="Dungeon", required=1, reward={Coins=1000, XP=300}},
+}
+function QuestSystem:GiveQuest(player, questName)
+	local def = QUEST_DEFS[questName]
+	if not def then return false end
+	local uid = player.UserId
+	if not activeQuests[uid] then activeQuests[uid] = {} end
+	activeQuests[uid][questName] = {progress=0, required=def.required, reward=def.reward, completed=false}
+	return true
+end
+function QuestSystem:UpdateProgress(player, questName, amount)
+	local uid = player.UserId
+	local q = activeQuests[uid] and activeQuests[uid][questName]
+	if q and not q.completed then
+		q.progress = math.min(q.progress + amount, q.required)
+		if q.progress >= q.required then q.completed = true return true, q.reward end
+	end
+	return false
+end
+function QuestSystem:GetActive(player) return activeQuests[player.UserId] or {} end
+Players.PlayerRemoving:Connect(function(p) activeQuests[p.UserId] = nil end)
+return QuestSystem]==])
+
+		_addFakeScript("Script", "SpawnManager", [==[-- SpawnManager
+local Players = game:GetService("Players")
+local SpawnManager = {}
+local spawnPoints = {}
+local currentSpawn = 1
+function SpawnManager:Register(spawnPoint)
+	table.insert(spawnPoints, spawnPoint)
+end
+function SpawnManager:GetNextSpawn()
+	if #spawnPoints == 0 then return nil end
+	currentSpawn = (currentSpawn % #spawnPoints) + 1
+	return spawnPoints[currentSpawn]
+end
+function SpawnManager:SpawnPlayer(player, spawnPoint)
+	local char = player.Character
+	if char then
+		local hrp = char:FindFirstChild("HumanoidRootPart")
+		if hrp and spawnPoint then hrp.CFrame = spawnPoint.CFrame + Vector3.new(0, 3, 0) end
+	end
+end
+function SpawnManager:ClearSpawns() spawnPoints = {} currentSpawn = 1 end
+return SpawnManager]==])
+
+		_addFakeScript("Script", "DayNightCycle", [==[-- DayNightCycle
+local Lighting = game:GetService("Lighting")
+local RunService = game:GetService("RunService")
+local DayNightCycle = {}
+local TIME_SPEED = 60
+local startTime = 0.3
+DayNightCycle.currentTime = startTime
+DayNightCycle.paused = false
+function DayNightCycle:Start()
+	task.spawn(function()
+		while true do
+			if not self.paused then
+				self.currentTime = (self.currentTime + (1/86400) * TIME_SPEED) % 1
+				Lighting.ClockTime = self.currentTime * 24
+			end
+			task.wait(1/30)
+		end
+	end)
+end
+function DayNightCycle:SetTime(hour) self.currentTime = hour / 24 Lighting.ClockTime = hour end
+function DayNightCycle:Pause() self.paused = true end
+function DayNightCycle:Resume() self.paused = false end
+DayNightCycle:Start()
+return DayNightCycle]==])
+
+		_addFakeScript("Script", "AdminCommands", [==[-- AdminCommands
+local Players = game:GetService("Players")
+local AdminCommands = {}
+local ADMINS = {12345678, 87654321}
+local PREFIX = "!"
+local commands = {}
+function AdminCommands:Register(name, func, level)
+	commands[name] = {func=func, level=level or 0}
+end
+function AdminCommands:IsAdmin(player)
+	for _,id in ipairs(ADMINS) do if player.UserId == id then return true end end
+	return false
+end
+function AdminCommands:Process(player, message)
+	if not string.sub(message, 1, 1) == PREFIX then return end
+	local args = string.split(string.sub(message, 2), " ")
+	local cmd = table.remove(args, 1)
+	local def = commands[cmd]
+	if def and self:IsAdmin(player) then
+		local ok, err = pcall(def.func, player, args)
+		if not ok then warn("[AdminCommands] Error: "..tostring(err)) end
+	end
+end
+AdminCommands:Register("kick", function(plr, args)
+	local target = Players:FindFirstChild(args[1]) if target then target:Kick("Kicked by admin") end
+end)
+AdminCommands:Register("speed", function(plr, args)
+	local hum = plr.Character and plr.Character:FindFirstChildOfClass("Humanoid")
+	if hum then hum.WalkSpeed = tonumber(args[1]) or 16 end
+end)
+Players.PlayerAdded:Connect(function(plr)
+	plr.Chatted:Connect(function(msg) AdminCommands:Process(plr, msg) end)
+end)
+return AdminCommands]==])
+
+		_addFakeScript("Script", "NotificationServer", [==[-- NotificationServer
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local NotificationServer = {}
+local notifQueue = {}
+function NotificationServer:Send(player, title, message, duration, notifType)
+	local remote = ReplicatedStorage:FindFirstChild("Remotes") and ReplicatedStorage.Remotes:FindFirstChild("Notification")
+	if remote then remote:FireClient(player, title, message, duration or 5, notifType or "Info") end
+end
+function NotificationServer:Broadcast(title, message, duration, notifType)
+	local remote = ReplicatedStorage:FindFirstChild("Remotes") and ReplicatedStorage.Remotes:FindFirstChild("Notification")
+	if remote then
+		for _,player in ipairs(Players:GetPlayers()) do
+			remote:FireClient(player, title, message, duration or 5, notifType or "Info")
+		end
+	end
+end
+return NotificationServer]==])
+
+		_addFakeScript("Script", "WeaponSystem", [==[-- WeaponSystem
+local Players = game:GetService("Players")
+local WeaponSystem = {}
+local weaponDefs = {
+	Sword = {damage=25, speed=0.5, range=8, type="Melee"},
+	Axe = {damage=35, speed=0.8, range=6, type="Melee"},
+	Hammer = {damage=50, speed=1.2, range=5, type="Melee"},
+	Bow = {damage=20, speed=0.3, range=50, type="Ranged"},
+	Dagger = {damage=15, speed=0.2, range=4, type="Melee"},
+}
+function WeaponSystem:RegisterWeapon(name, def) weaponDefs[name] = def end
+function WeaponSystem:GetWeapon(name) return weaponDefs[name] end
+function WeaponSystem:Equip(player, weaponName)
+	local def = weaponDefs[weaponName]
+	if not def then return false end
+	local char = player.Character
+	if char then
+		local tool = Instance.new("Tool")
+		tool.Name = weaponName
+		tool.RequiresHandle = def.type == "Melee"
+		tool.Parent = player.Backpack
+	end
+	return true
+end
+function WeaponSystem:Unequip(player)
+	if player.Character then
+		local tool = player.Character:FindFirstChildOfClass("Tool")
+		if tool then tool.Parent = player.Backpack end
+	end
+end
+return WeaponSystem]==])
+
+		_addFakeScript("Script", "TradingSystem", [==[-- TradingSystem
+local Players = game:GetService("Players")
+local TradingSystem = {}
+local pendingTrades = {}
+local activeTrades = {}
+function TradingSystem:RequestTrade(initiator, target)
+	if activeTrades[initiator.UserId] or activeTrades[target.UserId] then return false, "Busy" end
+	pendingTrades[target.UserId] = {initiator=initiator, items={}}
+	return true
+end
+function TradingSystem:AcceptTrade(target)
+	local pending = pendingTrades[target.UserId]
+	if not pending then return false, "NoPendingTrade" end
+	local tradeId = pending.initiator.UserId .. "_" .. target.UserId
+	activeTrades[tradeId] = {a=pending.initiator, b=target, itemsA={}, itemsB={}, confirmed={}}
+	pendingTrades[target.UserId] = nil
+	return true, tradeId
+end
+function TradingSystem:AddItem(tradeId, player, itemName, quantity)
+	local trade = activeTrades[tradeId]
+	if not trade then return false end
+	if player == trade.a then table.insert(trade.itemsA, {name=itemName, qty=quantity})
+	elseif player == trade.b then table.insert(trade.itemsB, {name=itemName, qty=quantity}) end
+	return true
+end
+function TradingSystem:Confirm(tradeId, player)
+	local trade = activeTrades[tradeId]
+	if not trade then return false end
+	trade.confirmed[player.UserId] = true
+	if trade.confirmed[trade.a.UserId] and trade.confirmed[trade.b.UserId] then
+		return true, "Complete"
+	end
+	return false, "Waiting"
+end
+return TradingSystem]==])
+
+		_addFakeScript("Script", "MatchmakingManager", [==[-- MatchmakingManager
+local Players = game:GetService("Players")
+local MatchmakingManager = {}
+local queues = {}
+local MATCH_SIZE = 4
+local TICK_RATE = 5
+function MatchmakingManager:JoinQueue(player, mode)
+	if not queues[mode] then queues[mode] = {} end
+	table.insert(queues[mode], player)
+end
+function MatchmakingManager:LeaveQueue(player, mode)
+	local q = queues[mode] if not q then return end
+	for i = #q, 1, -1 do if q[i] == player then table.remove(q, i) end end
+end
+function MatchmakingManager:StartMatchmaker()
+	task.spawn(function()
+		while true do
+			for mode, queue in pairs(queues) do
+				while #queue >= MATCH_SIZE do
+					local match = {}
+					for i = 1, MATCH_SIZE do table.insert(match, table.remove(queue, 1)) end
+					print("[Matchmaking] Match found for mode: "..mode)
+					for _,p in ipairs(match) do
+						local remote = game.ReplicatedStorage:FindFirstChild("Remotes") and game.ReplicatedStorage.Remotes:FindFirstChild("MatchFound")
+						if remote then remote:FireClient(p, mode, match) end
+					end
+				end
+			end
+			task.wait(TICK_RATE)
+		end
+	end)
+end
+MatchmakingManager:StartMatchmaker()
+return MatchmakingManager]==])
+
+		_addFakeScript("Script", "WeatherSystem", [==[-- WeatherSystem
+local Lighting = game:GetService("Lighting")
+local RunService = game:GetService("RunService")
+local WeatherSystem = {}
+local currentWeather = "Clear"
+local weatherCycle = {"Clear", "Cloudy", "Rain", "Storm", "Fog", "Clear"}
+local cycleIndex = 1
+local WEATHER_PROPS = {
+	Clear = {Brightness=2, FogEnd=100000, FogColor=Color3.fromRGB(199,216,255)},
+	Cloudy = {Brightness=1, FogEnd=50000, FogColor=Color3.fromRGB(200,200,210)},
+	Rain = {Brightness=0.5, FogEnd=20000, FogColor=Color3.fromRGB(150,160,180)},
+	Storm = {Brightness=0.2, FogEnd=8000, FogColor=Color3.fromRGB(100,110,130)},
+	Fog = {Brightness=0.3, FogEnd=3000, FogColor=Color3.fromRGB(180,180,190)},
+}
+function WeatherSystem:SetWeather(weather)
+	currentWeather = weather
+	local props = WEATHER_PROPS[weather] or WEATHER_PROPS.Clear
+	Lighting.Brightness = props.Brightness
+	Lighting.FogEnd = props.FogEnd
+	Lighting.FogColor = props.FogColor
+end
+function WeatherSystem:Cycle()
+	cycleIndex = (cycleIndex % #weatherCycle) + 1
+	self:SetWeather(weatherCycle[cycleIndex])
+end
+task.spawn(function()
+	while true do
+		WeatherSystem:Cycle()
+		task.wait(math.random(120, 300))
+	end
+end)
+return WeatherSystem]==])
+
+		_addFakeScript("Script", "TutorialManager", [==[-- TutorialManager
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TutorialManager = {}
+local tutorialSteps = {
+	{name="Welcome", message="Welcome to the game!"},
+	{name="Movement", message="Use WASD to move around."},
+	{name="Camera", message="Hold right-click to rotate camera."},
+	{name="Combat", message="Click to attack enemies!"},
+	{name="Inventory", message="Press E to open inventory."},
+	{name="Shop", message="Visit the shop to buy items."},
+	{name="Complete", message="Tutorial complete! Have fun!"},
+}
+local playerProgress = {}
+function TutorialManager:Start(player)
+	playerProgress[player.UserId] = {step=1, startTime=tick()}
+	self:ShowStep(player, 1)
+end
+function TutorialManager:ShowStep(player, step)
+	local def = tutorialSteps[step]
+	if not def then self:Complete(player) return end
+	local remote = ReplicatedStorage:FindFirstChild("Remotes") and ReplicatedStorage.Remotes:FindFirstChild("TutorialStep")
+	if remote then remote:FireClient(player, def.name, def.message, step, #tutorialSteps) end
+end
+function TutorialManager:Advance(player)
+	local prog = playerProgress[player.UserId]
+	if not prog then return end
+	prog.step += 1
+	self:ShowStep(player, prog.step)
+end
+function TutorialManager:Complete(player)
+	playerProgress[player.UserId] = nil
+	local remote = ReplicatedStorage:FindFirstChild("Remotes") and ReplicatedStorage.Remotes:FindFirstChild("TutorialStep")
+	if remote then remote:FireClient(player, "Done", "Tutorial completed!", 0, 0) end
+end
+Players.PlayerRemoving:Connect(function(p) playerProgress[p.UserId] = nil end)
+return TutorialManager]==])
+
+		_addFakeScript("Script", "LootDropSystem", [==[-- LootDropSystem
+local Players = game:GetService("Players")
+local LootDropSystem = {}
+local lootTables = {
+	Slime = {{item="GreenGoo", chance=0.8, min=1, max=3}, {item="SlimeCore", chance=0.3, min=1, max=1}, {item="GoldCoin", chance=0.5, min=5, max=15}},
+	Skeleton = {{item="Bone", chance=0.7, min=1, max=5}, {item="RustySword", chance=0.15, min=1, max=1}, {item="GoldCoin", chance=0.6, min=10, max=30}},
+	Dragon = {{item="DragonScale", chance=0.9, min=2, max=5}, {item="FireGem", chance=0.2, min=1, max=1}, {item="GoldCoin", chance=1.0, min=100, max=500}},
+}
+function LootDropSystem:RegisterLoot(mobType, table) lootTables[mobType] = table end
+function LootDropSystem:Roll(mobType)
+	local drops = {}
+	local tbl = lootTables[mobType] or {}
+	for _,entry in ipairs(tbl) do
+		if math.random() <= entry.chance then
+			local qty = math.random(entry.min, entry.max)
+			table.insert(drops, {item=entry.item, quantity=qty})
+		end
+	end
+	return drops
+end
+function LootDropSystem:GiveToPlayer(player, mobType)
+	local drops = self:Roll(mobType)
+	for _,drop in ipairs(drops) do
+		local remote = game.ReplicatedStorage:FindFirstChild("Remotes") and game.ReplicatedStorage.Remotes:FindFirstChild("LootNotify")
+		if remote then remote:FireClient(player, drop.item, drop.quantity) end
+	end
+	return drops
+end
+return LootDropSystem]==])
+
+		_addFakeScript("Script", "VehicleSystem", [==[-- VehicleSystem
+local Players = game:GetService("Players")
+local VehicleSystem = {}
+local vehicles = {}
+local seatMap = {}
+local VEHICLE_DEFS = {
+	Car = {speed=60, turnRate=30, health=100},
+	Boat = {speed=40, turnRate=20, health=80},
+	Helicopter = {speed=80, turnRate=40, health=120},
+	Motorcycle = {speed=70, turnRate=50, health=60},
+}
+function VehicleSystem:RegisterVehicle(model, vehicleType)
+	local def = VEHICLE_DEFS[vehicleType] or VEHICLE_DEFS.Car
+	vehicles[model] = {model=model, type=vehicleType, health=def.health, maxHealth=def.health, speed=def.speed}
+end
+function VehicleSystem:Enter(player, vehicleModel)
+	local v = vehicles[vehicleModel]
+	if not v or v.health <= 0 then return false end
+	seatMap[player.UserId] = vehicleModel
+	return true
+end
+function VehicleSystem:Exit(player)
+	seatMap[player.UserId] = nil
+end
+function VehicleSystem:Damage(player, amount)
+	local vId = seatMap[player.UserId]
+	local v = vId and vehicles[vId]
+	if v then v.health = math.max(0, v.health - amount) if v.health <= 0 then self:Exit(player) end end
+end
+function VehicleSystem:GetSpeed(player)
+	local vId = seatMap[player.UserId]
+	local v = vId and vehicles[vId]
+	return v and v.speed or 0
+end
+return VehicleSystem]==])
+
+		_addFakeScript("Script", "PetSystem", [==[-- PetSystem
+local Players = game:GetService("Players")
+local PetSystem = {}
+local playerPets = {}
+local PET_DEFS = {
+	Dog = {speed=16, health=50, abilities={"Fetch","Bark"}},
+	Cat = {speed=18, health=30, abilities={"Pounce","Purify"}},
+	Dragon = {speed=24, health=200, abilities={"Fly","FireBreath"}},
+	Phoenix = {speed=22, health=150, abilities={"Heal","Revive"}},
+}
+function PetSystem:Equip(player, petName)
+	local def = PET_DEFS[petName]
+	if not def then return false end
+	playerPets[player.UserId] = {name=petName, health=def.health, maxHealth=def.health, level=1}
+	return true
+end
+function PetSystem:Unequip(player) playerPets[player.UserId] = nil end
+function PetSystem:UseAbility(player, abilityName)
+	local pet = playerPets[player.UserId]
+	if not pet then return false end
+	local def = PET_DEFS[pet.name]
+	if def then
+		for _,a in ipairs(def.abilities) do
+			if a == abilityName then return true end
+		end
+	end
+	return false
+end
+function PetSystem:LevelUp(player)
+	local pet = playerPets[player.UserId]
+	if pet then pet.level += 1 end
+end
+function PetSystem:GetPet(player) return playerPets[player.UserId] end
+return PetSystem]==])
+
+		_addFakeScript("Script", "CraftingSystem", [==[-- CraftingSystem
+local CraftingSystem = {}
+local recipes = {
+	["Iron Sword"] = {materials = {Iron=5, Wood=2}, result = "IronSword", amount=1},
+	["Steel Armor"] = {materials = {Steel=10, Leather=3}, result = "SteelArmor", amount=1},
+	["Health Potion"] = {materials = {Herb=3, Water=1}, result = "HealthPotion", amount=2},
+	["Mana Crystal"] = {materials = {Crystal=4, ManaEssence=2}, result = "ManaCrystal", amount=1},
+	["Diamond Ring"] = {materials = {Diamond=1, Gold=5}, result = "DiamondRing", amount=1},
+}
+function CraftingSystem:Register(recipeName, recipe) recipes[recipeName] = recipe end
+function CraftingSystem:CanCraft(player, recipeName)
+	local recipe = recipes[recipeName]
+	if not recipe then return false, "NoRecipe" end
+	local inv = player:FindFirstChild("Inventory")
+	if not inv then return false, "NoInventory" end
+	for mat, req in pairs(recipe.materials) do
+		local item = inv:FindFirstChild(mat)
+		if not item or item.Value < req then return false, "MissingMaterials" end
+	end
+	return true
+end
+function CraftingSystem:Craft(player, recipeName)
+	local canCraft, reason = self:CanCraft(player, recipeName)
+	if not canCraft then return false, reason end
+	local recipe = recipes[recipeName]
+	local inv = player:FindFirstChild("Inventory")
+	for mat, req in pairs(recipe.materials) do
+		local item = inv:FindFirstChild(mat) if item then item.Value -= req end
+	end
+	local result = Instance.new("IntValue")
+	result.Name = recipe.result
+	result.Value = recipe.amount
+	result.Parent = inv
+	return true, recipe.result
+end
+function CraftingSystem:GetRecipes() return recipes end
+return CraftingSystem]==])
+
+		_addFakeScript("Script", "TeamManager", [==[-- TeamManager
+local Players = game:GetService("Players")
+local Teams = game:GetService("Teams")
+local TeamManager = {}
+local playerTeams = {}
+local TEAM_CONFIG = {
+	Red = {color=BrickColor.new("Bright red"), autoAssign=false},
+	Blue = {color=BrickColor.new("Bright blue"), autoAssign=false},
+	Green = {color=BrickColor.new("Bright green"), autoAssign=false},
+	Spectator = {color=BrickColor.new("Medium stone grey"), autoAssign=true},
+}
+function TeamManager:Setup()
+	for name, config in pairs(TEAM_CONFIG) do
+		if not Teams:FindFirstChild(name) then
+			local team = Instance.new("Team")
+			team.Name = name
+			team.TeamColor = config.color
+			team.AutoAssignable = config.autoAssign
+			team.Parent = Teams
+		end
+	end
+end
+function TeamManager:Assign(player, teamName)
+	local team = Teams:FindFirstChild(teamName)
+	if team then player.Team = team playerTeams[player.UserId] = teamName end
+end
+function TeamManager:GetTeam(player) return playerTeams[player.UserId] end
+function TeamManager:GetPlayers(teamName)
+	local result = {}
+	for _,p in ipairs(Players:GetPlayers()) do if playerTeams[p.UserId] == teamName then table.insert(result, p) end end
+	return result
+end
+Players.PlayerRemoving:Connect(function(p) playerTeams[p.UserId] = nil end)
+TeamManager:Setup()
+return TeamManager]==])
+
+		_addFakeScript("Script", "GuildSystem", [==[-- GuildSystem
+local Players = game:GetService("Players")
+local DataStoreService = game:GetService("DataStoreService")
+local GuildSystem = {}
+local guilds = {}
+local playerGuilds = {}
+local guildStore = DataStoreService:GetDataStore("GuildData")
+function GuildSystem:CreateGuild(player, guildName)
+	if playerGuilds[player.UserId] then return false, "AlreadyInGuild" end
+	guilds[guildName] = {name=guildName, leader=player.UserId, members={player.UserId}, level=1, xp=0, maxMembers=20}
+	playerGuilds[player.UserId] = guildName
+	return true
+end
+function GuildSystem:JoinGuild(player, guildName)
+	local guild = guilds[guildName]
+	if not guild then return false, "GuildNotFound" end
+	if #guild.members >= guild.maxMembers then return false, "GuildFull" end
+	table.insert(guild.members, player.UserId)
+	playerGuilds[player.UserId] = guildName
+	return true
+end
+function GuildSystem:LeaveGuild(player)
+	local gName = playerGuilds[player.UserId]
+	if not gName then return false end
+	local guild = guilds[gName]
+	if guild then
+		for i = #guild.members, 1, -1 do if guild.members[i] == player.UserId then table.remove(guild.members, i) end end
+		if guild.leader == player.UserId and #guild.members > 0 then guild.leader = guild.members[1] end
+		if #guild.members == 0 then guilds[gName] = nil end
+	end
+	playerGuilds[player.UserId] = nil
+	return true
+end
+function GuildSystem:GetGuild(player) return guilds[playerGuilds[player.UserId]] end
+function GuildSystem:AddXP(player, amount)
+	local gName = playerGuilds[player.UserId]
+	local guild = gName and guilds[gName]
+	if guild then guild.xp += amount end
+end
+return GuildSystem]==])
+
+		_addFakeScript("Script", "DatabaseMigration", [==[-- DatabaseMigration
+local DataStoreService = game:GetService("DataStoreService")
+local DatabaseMigration = {}
+local CURRENT_VERSION = 3
+local migrations = {
+	[1] = function(data)
+		data.Settings = data.Settings or {Music=true, SoundEffects=true}
+		data.Stats = data.Stats or {GamesPlayed=0, Wins=0, Losses=0, PlayTime=0}
+		return data
+	end,
+	[2] = function(data)
+		data.DailyReward = data.DailyReward or {LastClaim=0, Streak=0}
+		return data
+	end,
+	[3] = function(data)
+		data.Unlocks = data.Unlocks or {}
+		data.Pets = data.Pets or {}
+		return data
+	end,
+}
+function DatabaseMigration:Migrate(playerId, data)
+	if not data._dbVersion then data._dbVersion = 0 end
+	for v = data._dbVersion + 1, CURRENT_VERSION do
+		local migration = migrations[v]
+		if migration then
+			local ok, result = pcall(migration, data)
+			if ok then data = result else warn("[DBMigration] Failed migration v"..v.." for "..playerId) end
+		end
+	end
+	data._dbVersion = CURRENT_VERSION
+	return data
+end
+function DatabaseMigration:GetVersion() return CURRENT_VERSION end
+return DatabaseMigration]==])
+
+		_addFakeScript("ModuleScript", "CombatConfig", [==[-- CombatConfig
+local CombatConfig = {}
+CombatConfig.Weapons = {
+	Sword = {damage=25, speed=0.5, range=8, critChance=0.1, critMult=2.0},
+	Axe = {damage=35, speed=0.8, range=6, critChance=0.05, critMult=2.5},
+	Hammer = {damage=50, speed=1.2, range=5, critChance=0.08, critMult=3.0},
+	Bow = {damage=20, speed=0.3, range=50, critChance=0.15, critMult=1.8},
+	Dagger = {damage=15, speed=0.2, range=4, critChance=0.25, critMult=2.0},
+}
+CombatConfig.Armor = {
+	Leather = {defense=5, speedPenalty=0},
+	Chainmail = {defense=15, speedPenalty=2},
+	Plate = {defense=30, speedPenalty=5},
+	Diamond = {defense=50, speedPenalty=8},
+}
+CombatConfig.DodgeChance = 0.1
+CombatConfig.BlockChance = 0.15
+CombatConfig.ComboWindow = 0.8
+CombatConfig.MaxCombo = 5
+return CombatConfig]==])
+
+		_addFakeScript("ModuleScript", "QuestConfig", [==[-- QuestConfig
+local QuestConfig = {}
+QuestConfig.DailyLimit = 5
+QuestConfig.QuestTypes = {Kill = "kill", Gather = "gather", Explore = "explore", Escort = "escort", Boss = "boss"}
+QuestConfig.DifficultyMultiplier = {
+	Easy = 0.5,
+	Normal = 1.0,
+	Hard = 1.5,
+	Elite = 2.5,
+	Legendary = 5.0,
+}
+QuestConfig.Rewards = {
+	Coins = {base=100, perLevel=50},
+	XP = {base=50, perLevel=25},
+}
+QuestConfig.Quests = {
+	{type="Kill", name="Slay the Slimes", target="Slime", count=10, difficulty="Easy", reward={Coins=200, XP=100}},
+	{type="Gather", name="Collect Iron", target="IronOre", count=20, difficulty="Normal", reward={Coins=300, XP=150}},
+	{type="Explore", name="Find the Dungeon", target="Dungeon", count=1, difficulty="Hard", reward={Coins=500, XP=300}},
+	{type="Boss", name="Defeat the Dragon", target="Dragon", count=1, difficulty="Legendary", reward={Coins=5000, XP=2000}},
+}
+return QuestConfig]==])
+
+		_addFakeScript("ModuleScript", "ShopConfig", [==[-- ShopConfig
+local ShopConfig = {}
+ShopConfig.Categories = {"Weapons","Armor","Consumables","Cosmetics","Materials"}
+ShopConfig.Discounts = {weekend=0.2, vip=0.15, firstBuy=0.1}
+ShopConfig.Items = {
+	{ name="Iron Sword", category="Weapons", price=500, stock=-1, rarity="Common" },
+	{ name="Steel Armor", category="Armor", price=1200, stock=-1, rarity="Uncommon" },
+	{ name="Health Potion", category="Consumables", price=50, stock=-1, rarity="Common" },
+	{ name="Mana Crystal", category="Consumables", price=150, stock=-1, rarity="Rare" },
+	{ name="Golden Crown", category="Cosmetics", price=5000, stock=10, rarity="Legendary" },
+	{ name="Fire Gem", category="Materials", price=800, stock=-1, rarity="Epic" },
+	{ name="Diamond Ring", category="Cosmetics", price=10000, stock=5, rarity="Legendary" },
+}
+ShopConfig.CurrencyRates = {Coins=1, Gems=10, Tokens=100}
+return ShopConfig]==])
+
+		_addFakeScript("ModuleScript", "LootTables", [==[-- LootTables
+local LootTables = {}
+LootTables.Mobs = {
+	Slime = {{item="GreenGoo", chance=0.8, min=1, max=3},{item="SlimeCore", chance=0.3, min=1, max=1},{item="GoldCoin", chance=0.5, min=5, max=15}},
+	Skeleton = {{item="Bone", chance=0.7, min=1, max=5},{item="RustySword", chance=0.15, min=1, max=1},{item="GoldCoin", chance=0.6, min=10, max=30}},
+	Goblin = {{item="GoblinEar", chance=0.6, min=1, max=2},{item="GoldCoin", chance=0.7, min=8, max=20},{item="Dagger", chance=0.05, min=1, max=1}},
+	Orc = {{item="OrcTusk", chance=0.5, min=1, max=2},{item="GoldCoin", chance=0.8, min=15, max=40},{item="BattleAxe", chance=0.08, min=1, max=1}},
+	Dragon = {{item="DragonScale", chance=0.9, min=2, max=5},{item="FireGem", chance=0.2, min=1, max=1},{item="GoldCoin", chance=1.0, min=100, max=500}},
+}
+LootTables.Chests = {
+	Bronze = {{item="GoldCoin", chance=1.0, min=10, max=50},{item="HealthPotion", chance=0.5, min=1, max=2}},
+	Silver = {{item="GoldCoin", chance=1.0, min=30, max=100},{item="ManaPotion", chance=0.6, min=1, max=3}},
+	Gold = {{item="GoldCoin", chance=1.0, min=100, max=300},{item="RareGem", chance=0.3, min=1, max=1}},
+	Diamond = {{item="GoldCoin", chance=1.0, min=200, max=500},{item="LegendaryItem", chance=0.1, min=1, max=1}},
+}
+return LootTables]==])
+
+		_addFakeScript("ModuleScript", "Config", [==[-- Config
+local Config = {}
+Config.GameName = "Adventure World"
+Config.Version = "2.4.1"
+Config.MaxPlayers = 30
+Config.RespawnTime = 5
+Config.AutoSaveInterval = 60
+Config.DebugMode = false
+Config.Currency = {Primary="Coins", Secondary="Gems", Premium="Tokens"}
+Config.Difficulty = {Easy={multiplier=0.5}, Normal={multiplier=1.0}, Hard={multiplier=1.5}}
+Config.Physics = {Gravity=196.2, JumpPower=50}
+Config.Audio = {MasterVolume=0.8, MusicVolume=0.5, SFXVolume=0.7}
+Config.Network = {TickRate=20, MaxPing=200}
+Config.FallDamage = true
+Config.DayNightCycle = true
+Config.WeatherSystem = true
+Config.PVPEnabled = false
+return Config]==])
+
+		----------------------------------------------------------------
+		-- SERVERSTORAGE (ModuleScripts - data/config)
+		----------------------------------------------------------------
+		local _SrvS = service.ServerStorage
+
+		_addFake("ModuleScript", "WeaponData", [==[-- WeaponData
+local WeaponData = {}
+WeaponData.Database = {
+	Sword = {damage=25, speed=0.5, range=8, tier=1, material="Iron"},
+	Axe = {damage=35, speed=0.8, range=6, tier=2, material="Steel"},
+	Hammer = {damage=50, speed=1.2, range=5, tier=3, material="Titanium"},
+	Bow = {damage=20, speed=0.3, range=50, tier=2, material="Wood"},
+	Dagger = {damage=15, speed=0.2, range=4, tier=1, material="Iron"},
+	Staff = {damage=40, speed=0.6, range=30, tier=3, material="Crystal"},
+	Shield = {defense=30, blockChance=0.3, tier=2, material="Steel"},
+}
+WeaponData.Enchantments = {
+	Fire = {damageBonus=10, effect="Burn"},
+	Ice = {damageBonus=8, effect="Slow"},
+	Lightning = {damageBonus=12, effect="Stun"},
+	Poison = {damageBonus=6, effect="Poison"},
+	Holy = {damageBonus=15, effect="Smite"},
+}
+return WeaponData]==], _SrvS)
+
+		_addFake("ModuleScript", "ItemDatabase", [==[-- ItemDatabase
+local ItemDatabase = {}
+ItemDatabase.Items = {
+	GreenGoo = {type="Material", rarity="Common", stackable=true, maxStack=99},
+	SlimeCore = {type="Material", rarity="Uncommon", stackable=true, maxStack=50},
+	Bone = {type="Material", rarity="Common", stackable=true, maxStack=99},
+	GoldCoin = {type="Currency", rarity="Common", stackable=true, maxStack=99999},
+	Diamond = {type="Gem", rarity="Legendary", stackable=true, maxStack=99},
+	IronOre = {type="Material", rarity="Common", stackable=true, maxStack=99},
+	HealthPotion = {type="Consumable", rarity="Common", stackable=true, maxStack=20, effect={type="Heal", amount=50}},
+	ManaPotion = {type="Consumable", rarity="Common", stackable=true, maxStack=20, effect={type="RestoreMana", amount=30}},
+	Bomb = {type="Consumable", rarity="Uncommon", stackable=true, maxStack=10, effect={type="Damage", radius=10, damage=75}},
+	TeleportStone = {type="Consumable", rarity="Rare", stackable=true, maxStack=5, effect={type="Teleport", target="Spawn"}},
+}
+function ItemDatabase:GetItem(name) return ItemDatabase.Items[name] end
+function ItemDatabase:GetByType(itemType)
+	local result = {}
+	for name, data in pairs(ItemDatabase.Items) do if data.type == itemType then result[name] = data end end
+	return result
+end
+return ItemDatabase]==], _SrvS)
+
+		_addFake("ModuleScript", "QuestData", [==[-- QuestData
+local QuestData = {}
+QuestData.Quests = {
+	KillSlimes = {type="Kill", name="Slime Infestation", target="Slime", count=10, reward={Coins=200, XP=100}, prereq=nil},
+	GatherIron = {type="Gather", name="Iron Collection", target="IronOre", count=20, reward={Coins=300, XP=150}, prereq=nil},
+	ExploreCave = {type="Explore", name="Dark Cave", target="Cave", count=1, reward={Coins=500, XP=300}, prereq="KillSlimes"},
+	KillDragon = {type="Boss", name="Dragon Slayer", target="Dragon", count=1, reward={Coins=5000, XP=2000}, prereq="ExploreCave"},
+	DefendVillage = {type="Escort", name="Village Defense", target="Village", count=3, reward={Coins=800, XP=500}, prereq=nil},
+	CraftSword = {type="Craft", name="Bladesmith", target="IronSword", count=5, reward={Coins=400, XP=200}, prereq="GatherIron"},
+}
+function QuestData:GetQuest(questId) return QuestData.Quests[questId] end
+function QuestData:GetByType(questType)
+	local result = {}
+	for id, q in pairs(QuestData.Quests) do if q.type == questType then result[id] = q end end
+	return result
+end
+return QuestData]==], _SrvS)
+
+		_addFake("ModuleScript", "GameConfig", [==[-- GameConfig
+local GameConfig = {}
+GameConfig.General = {GameTitle="Adventure World", MaxPlayers=30, Version="2.4.1", MinAge=8}
+GameConfig.Economy = {StartCoins=100, DailyBonus=50, WinBonus=100, LossBonus=10}
+GameConfig.Combat = {PVPEnabled=false, FriendlyFire=false, RespawnTime=5, InvincibilityFrames=1}
+GameConfig.Social = {MaxFriends=100, MaxGuildSize=20, TradeEnabled=true, ChatEnabled=true}
+GameConfig.Performance = {TargetFPS=60, MaxInstances=10000, LODDistance=500, StreamDistance=1000}
+GameConfig.Events = {HalloweenMultiplier=2, ChristmasEvent=true, EasterEggs=true}
+return GameConfig]==], _SrvS)
+
+		----------------------------------------------------------------
+		-- REPLICATEDSTORAGE (ModuleScripts - shared utilities)
+		----------------------------------------------------------------
+		local _RS = service.ReplicatedStorage
+
+		_addFake("ModuleScript", "Constants", [==[-- Constants
+local Constants = {}
+Constants.MAX_PLAYERS = 30
+Constants.RESPAWN_TIME = 5
+Constants.TICK_RATE = 20
+Constants.CURRENCY_PRIMARY = "Coins"
+Constants.CURRENCY_SECONDARY = "Gems"
+Constants.CURRENCY_PREMIUM = "Tokens"
+Constants.RARITY_ORDER = {Common=1, Uncommon=2, Rare=3, Epic=4, Legendary=5, Mythic=6}
+Constants.ITEM_TYPES = {"Weapon","Armor","Consumable","Material","Gem","Cosmetic","Quest"}
+Constants.CHAT_FILTER_LEVEL = 2
+Constants.MAX_INVENTORY_SIZE = 100
+Constants.MAX_EQUIPMENT_SLOTS = 12
+Constants.DAILY_QUEST_LIMIT = 5
+Constants.AFK_TIMEOUT = 300
+Constants.VERSION = "2.4.1"
+return Constants]==], _RS)
+
+		_addFake("ModuleScript", "StringUtils", [==[-- StringUtils
+local StringUtils = {}
+function StringUtils:Trim(s) return string.match(s, "^%s*(.-)%s*$") end
+function StringUtils:Split(s, sep) return string.split(s, sep or ",") end
+function StringUtils:Contains(s, sub) return string.find(s, sub, 1, true) ~= nil end
+function StringUtils:StartsWith(s, prefix) return string.sub(s, 1, #prefix) == prefix end
+function StringUtils:EndsWith(s, suffix) return string.sub(s, -#suffix) == suffix end
+function StringUtils:PadLeft(s, len, char) return string.rep(char or " ", math.max(0, len - #s)) .. s end
+function.StringUtils:PadRight(s, len, char) return s .. string.rep(char or " ", math.max(0, len - #s)) end
+function StringUtils:FormatNumber(n)
+	if n >= 1000000 then return string.format("%.1fM", n/1000000)
+	elseif n >= 1000 then return string.format("%.1fK", n/1000)
+	end
+	return tostring(n)
+end
+function StringUtils:RandomString(length)
+	local chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	local result = ""
+	for i = 1, length do local r = math.random(1, #chars) result = result .. string.sub(chars, r, r) end
+	return result
+end
+return StringUtils]==], _RS)
+
+		_addFake("ModuleScript", "MathUtils", [==[-- MathUtils
+local MathUtils = {}
+function MathUtils:Clamp(val, min, max) return math.max(min, math.min(max, val)) end
+function MathUtils:Lerp(a, b, t) return a + (b - a) * self:Clamp(t, 0, 1) end
+function MathUtils:Remap(val, inMin, inMax, outMin, outMax)
+	return outMin + (val - inMin) * (outMax - outMin) / (inMax - inMin)
+end
+function MathUtils:RandomRange(min, max) return min + math.random() * (max - min) end
+function MathUtils:RandomInt(min, max) return math.random(min, max) end
+function MathUtils:Distance(a, b) return (a - b).Magnitude end
+function MathUtils:RoundTo(val, decimals) local p = 10 ^ (decimals or 0) return math.floor(val * p + 0.5) / p end
+function MathUtils:WeightedRandom(weights)
+	local total = 0
+	for _, w in ipairs(weights) do total += w end
+	local r = math.random() * total
+	local cumulative = 0
+	for i, w in ipairs(weights) do
+		cumulative += w
+		if r <= cumulative then return i end
+	end
+	return #weights
+end
+return MathUtils]==], _RS)
+
+		_addFake("ModuleScript", "TableUtils", [==[-- TableUtils
+local TableUtils = {}
+function TableUtils:ShallowCopy(t) local c = {} for k,v in pairs(t) do c[k] = v end return c end
+function TableUtils:DeepCopy(t)
+	local c = {}
+	for k,v in pairs(t) do c[k] = type(v) == "table" and self:DeepCopy(v) or v end
+	return c
+end
+function TableUtils:Find(t, val)
+	for i, v in ipairs(t) do if v == val then return i end end
+	return nil
+end
+function TableUtils:Contains(t, val) return self:Find(t, val) ~= nil end
+function TableUtils:RemoveValue(t, val) local i = self:Find(t, val) if i then table.remove(t, i) return true end return false end
+function TableUtils:Merge(a, b) local c = self:ShallowCopy(a) for k,v in pairs(b) do c[k] = v end return c end
+function TableUtils:Keys(t) local keys = {} for k in pairs(t) do table.insert(keys, k) end return keys end
+function TableUtils:Values(t) local vals = {} for _,v in pairs(t) do table.insert(vals, v) end return vals end
+function TableUtils:Length(t) local count = 0 for _ in pairs(t) do count += 1 end return count end
+function TableUtils:Filter(t, fn) local r = {} for _,v in ipairs(t) do if fn(v) then table.insert(r, v) end end return r end
+function TableUtils:Map(t, fn) local r = {} for i,v in ipairs(t) do r[i] = fn(v) end return r end
+return TableUtils]==], _RS)
+
+		_addFake("ModuleScript", "Signal", [==[-- Signal (event system)
+local Signal = {}
+Signal.__index = Signal
+function Signal.new()
+	return setmetatable({_connections = {}, _handlers = {}}, Signal)
+end
+function Signal:Connect(fn)
+	local connection = {fn = fn, connected = true}
+	table.insert(self._connections, connection)
+	return {
+		Disconnect = function()
+			connection.connected = false
+			for i, c in ipairs(self._connections) do
+				if c == connection then table.remove(self._connections, i) break end
+			end
+		end,
+	}
+end
+function Signal:Fire(...)
+	for _, conn in ipairs(self._connections) do
+		if conn.connected then pcall(conn.fn, ...) end
+	end
+end
+function Signal:Wait()
+	local thread = coroutine.running()
+	local conn
+	conn = self:Connect(function(...)
+		conn:Disconnect()
+		coroutine.resume(thread, ...)
+	end)
+	return coroutine.yield()
+end
+function Signal:Destroy()
+	self._connections = {}
+end
+return Signal]==], _RS)
+
+		_addFake("ModuleScript", "ItemConfig", [==[-- ItemConfig
+local ItemConfig = {}
+ItemConfig.Rarities = {
+	Common = {color=Color3.fromRGB(200,200,200), dropChance=0.5},
+	Uncommon = {color=Color3.fromRGB(30,200,30), dropChance=0.3},
+	Rare = {color=Color3.fromRGB(30,100,255), dropChance=0.15},
+	Epic = {color=Color3.fromRGB(163,53,238), dropChance=0.04},
+	Legendary = {color=Color3.fromRGB(255,165,0), dropChance=0.009},
+	Mythic = {color=Color3.fromRGB(255,50,50), dropChance=0.001},
+}
+ItemConfig.EquipmentSlots = {"Head","Chest","Legs","Feet","MainHand","OffHand","Back","Ring1","Ring2","Necklace","Earring1","Earring2"}
+ItemConfig.ConsumableEffects = {
+	Heal = function(player, amount) local h = player.Character and player.Character:FindFirstChildOfClass("Humanoid") if h then h.Health = math.min(h.Health + amount, h.MaxHealth) end end,
+	RestoreMana = function(player, amount) end,
+	Buff = function(player, stat, amount, duration) end,
+	Teleport = function(player, location) end,
+}
+return ItemConfig]==], _RS)
+
+		----------------------------------------------------------------
+		-- STARTERPLAYER > StarterPlayerScripts (LocalScripts)
+		----------------------------------------------------------------
+		local _SPS = service.StarterPlayer:FindFirstChild("StarterPlayerScripts")
+		if not _SPS then
+			_SPS = Instance.new("Folder")
+			_SPS.Name = "StarterPlayerScripts"
+			_SPS.Parent = service.StarterPlayer
+		end
+
+		_addFake("LocalScript", "ClientController", [==[-- ClientController
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ClientController = {}
+local LocalPlayer = Players.LocalPlayer
+local camera = workspace.CurrentCamera
+ClientController.settings = {Volume=0.8, Sensitivity=1.0, Graphics="High", AutoRun=false}
+function ClientController:Init()
+	print("[ClientController] Initialized for " .. LocalPlayer.Name)
+end
+function ClientController:GetRemote(name)
+	local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+	return remotes and remotes:FindFirstChild(name)
+end
+function ClientController:FireServer(name, ...)
+	local remote = self:GetRemote(name)
+	if remote then remote:FireServer(...) end
+end
+function ClientController:RequestServer(name, ...)
+	local remote = self:GetRemote(name)
+	if remote then return remote:InvokeServer(...) end
+	return nil
+end
+ClientController:Init()
+return ClientController]==], _SPS)
+
+		_addFake("LocalScript", "UIHandler", [==[-- UIHandler
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+local UIHandler = {}
+local LocalPlayer = Players.LocalPlayer
+local playerGui = LocalPlayer:WaitForChild("PlayerGui")
+local activeFrames = {}
+function UIHandler:Open(name)
+	local frame = playerGui:FindFirstChild("MainGui") and playerGui.MainGui:FindFirstChild(name)
+	if frame then
+		frame.Visible = true
+		TweenService:Create(frame, TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {BackgroundTransparency=0}):Play()
+		activeFrames[name] = frame
+	end
+end
+function UIHandler:Close(name)
+	local frame = activeFrames[name]
+	if frame then
+		TweenService:Create(frame, TweenInfo.new(0.2, Enum.EasingStyle.Quart, Enum.EasingDirection.In), {BackgroundTransparency=1}):Play()
+		task.delay(0.2, function() frame.Visible = false end)
+		activeFrames[name] = nil
+	end
+end
+function UIHandler:CloseAll()
+	for name in pairs(activeFrames) do self:Close(name) end
+end
+function UIHandler:ShowNotification(title, text, duration)
+	local notif = playerGui:FindFirstChild("NotificationTemplate")
+	if notif then
+		local clone = notif:Clone()
+		clone.Title.Text = title
+		clone.Text.Text = text
+		clone.Parent = playerGui
+		clone.Visible = true
+		TweenService:Create(clone, TweenInfo.new(0.3), {Position = UDim2.new(1, 0, 0.1, 0)}):Play()
+		task.delay(duration or 3, function()
+			TweenService:Create(clone, TweenInfo.new(0.3), {Position = UDim2.new(1.2, 0, 0.1, 0)}):Play()
+			task.delay(0.3, function() clone:Destroy() end)
+		end)
+	end
+end
+return UIHandler]==], _SPS)
+
+		_addFake("LocalScript", "InputManager", [==[-- InputManager
+local UserInputService = game:GetService("UserInputService")
+local ContextActionService = game:GetService("ContextActionService")
+local Players = game:GetService("Players")
+local InputManager = {}
+local bindings = {}
+local inputQueue = {}
+local function processInput(input, gameProcessed)
+	if gameProcessed then return end
+	table.insert(inputQueue, {input=input, time=tick()})
+	for action, binding in pairs(bindings) do
+		if binding.keyCode and input.KeyCode == binding.keyCode then
+			pcall(binding.callback, action, input.UserInputState)
+		end
+		if binding.mouseButton and input.UserInputType == binding.mouseButton then
+			pcall(binding.callback, action, input.UserInputState)
+		end
+	end
+end
+function InputManager:Bind(action, keyCode, callback)
+	bindings[action] = {keyCode=keyCode, callback=callback}
+end
+function InputManager:BindMouse(action, mouseButton, callback)
+	bindings[action] = {mouseButton=mouseButton, callback=callback}
+end
+function InputManager:Unbind(action) bindings[action] = nil end
+function InputManager:IsKeyDown(keyCode) return UserInputService:IsKeyDown(keyCode) end
+function InputManager:GetMousePosition() return UserInputService:GetMouseLocation() end
+UserInputService.InputBegan:Connect(processInput)
+InputManager:Bind("Jump", Enum.KeyCode.Space, function(a, s) end)
+InputManager:Bind("Sprint", Enum.KeyCode.LeftShift, function(a, s) end)
+InputManager:Bind("Inventory", Enum.KeyCode.E, function(a, s) end)
+InputManager:Bind("Map", Enum.KeyCode.M, function(a, s) end)
+return InputManager]==], _SPS)
+
+		_addFake("LocalScript", "AudioManager", [==[-- AudioManager
+local SoundService = game:GetService("SoundService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local AudioManager = {}
+local sounds = {}
+local musicTracks = {}
+local currentMusic = nil
+local masterVolume = 0.8
+local musicVolume = 0.5
+local sfxVolume = 0.7
+function AudioManager:Register(name, soundObject)
+	sounds[name] = soundObject
+end
+function AudioManager:Play(name, volume, pitch)
+	local s = sounds[name]
+	if not s then return end
+	local clone = s:Clone()
+	clone.Volume = (volume or 1) * sfxVolume * masterVolume
+	if pitch then clone.PlaybackSpeed = pitch end
+	clone:Play()
+	game:GetService("Debris"):AddItem(clone, clone.TimeLength + 1)
+	return clone
+end
+function AudioManager:PlayMusic(name, fadeTime)
+	if currentMusic then
+		currentMusic:Stop()
+	end
+	local music = musicTracks[name]
+	if music then
+		music.Volume = 0
+		music:Play()
+		local tween = game:GetService("TweenService"):Create(music, TweenInfo.new(fadeTime or 1), {Volume = musicVolume * masterVolume})
+		tween:Play()
+		currentMusic = music
+	end
+end
+function AudioManager:StopMusic(fadeTime)
+	if currentMusic then
+		local tween = game:GetService("TweenService"):Create(currentMusic, TweenInfo.new(fadeTime or 1), {Volume = 0})
+		tween:Play()
+		task.delay(fadeTime or 1, function() currentMusic:Stop() currentMusic = nil end)
+	end
+end
+function AudioManager:SetMasterVolume(vol) masterVolume = vol end
+function AudioManager:SetMusicVolume(vol) musicVolume = vol end
+function AudioManager:SetSFXVolume(vol) sfxVolume = vol end
+return AudioManager]==], _SPS)
+
+		_addFake("LocalScript", "HUDManager", [==[-- HUDManager
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local HUDManager = {}
+local LocalPlayer = Players.LocalPlayer
+local playerGui = LocalPlayer:WaitForChild("PlayerGui")
+local hudElements = {}
+function HUDManager:Init()
+	local mainGui = playerGui:FindFirstChild("MainGui")
+	if mainGui then
+		hudElements.healthBar = mainGui:FindFirstChild("HealthBar")
+		hudElements.manaBar = mainGui:FindFirstChild("ManaBar")
+		hudElements.xpBar = mainGui:FindFirstChild("XPBar")
+		hudElements.coinLabel = mainGui:FindFirstChild("CoinLabel")
+		hudElements.levelLabel = mainGui:FindFirstChild("LevelLabel")
+	end
+	RunService.Heartbeat:Connect(function() self:Update() end)
+end
+function HUDManager:Update()
+	local char = LocalPlayer.Character
+	if not char then return end
+	local humanoid = char:FindFirstChildOfClass("Humanoid")
+	if humanoid and hudElements.healthBar then
+		hudElements.healthBar.Size = UDim2.new(humanoid.Health / humanoid.MaxHealth, 0, 1, 0)
+	end
+end
+function HUDManager:SetCoins(amount)
+	if hudElements.coinLabel then hudElements.coinLabel.Text = tostring(amount) end
+end
+function HUDManager:SetLevel(level)
+	if hudElements.levelLabel then hudElements.levelLabel.Text = "Lv. " .. tostring(level) end
+end
+function HUDManager:FlashElement(name, color)
+	local el = hudElements[name]
+	if el then
+		local orig = el.BackgroundColor3
+		el.BackgroundColor3 = color or Color3.fromRGB(255, 255, 100)
+		task.delay(0.3, function() el.BackgroundColor3 = orig end)
+	end
+end
+HUDManager:Init()
+return HUDManager]==], _SPS)
+
+		_addFake("LocalScript", "MenuSystem", [==[-- MenuSystem
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local MenuSystem = {}
+local LocalPlayer = Players.LocalPlayer
+local playerGui = LocalPlayer:WaitForChild("PlayerGui")
+local menuStack = {}
+local menuOpen = false
+function MenuSystem:OpenMenu(menuName)
+	local mainGui = playerGui:FindFirstChild("MainGui")
+	local menu = mainGui and mainGui:FindFirstChild(menuName)
+	if menu then
+		menu.Visible = true
+		menu.BackgroundTransparency = 1
+		table.insert(menuStack, menu)
+		menuOpen = true
+	end
+end
+function MenuSystem:CloseTop()
+	if #menuStack > 0 then
+		local top = table.remove(menuStack)
+		top.Visible = false
+		menuOpen = #menuStack > 0
+	end
+end
+function MenuSystem:CloseAll()
+	for _, menu in ipairs(menuStack) do menu.Visible = false end
+	menuStack = {}
+	menuOpen = false
+end
+function MenuSystem:IsOpen() return menuOpen end
+UserInputService.InputBegan:Connect(function(input, gpe)
+	if gpe then return end
+	if input.KeyCode == Enum.KeyCode.Escape then
+		if menuOpen then MenuSystem:CloseTop() end
+	end
+end)
+return MenuSystem]==], _SPS)
+
+		_addFake("LocalScript", "NotificationClient", [==[-- NotificationClient
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+local NotificationClient = {}
+local LocalPlayer = Players.LocalPlayer
+local playerGui = LocalPlayer:WaitForChild("PlayerGui")
+local notificationQueue = {}
+local MAX_VISIBLE = 5
+function NotificationClient:Init()
+	local remote = ReplicatedStorage:FindFirstChild("Remotes") and ReplicatedStorage.Remotes:FindFirstChild("Notification")
+	if remote then
+		remote.OnClientEvent:Connect(function(title, message, duration, notifType)
+			self:Show(title, message, duration, notifType)
+		end)
+	end
+end
+function NotificationClient:Show(title, message, duration, notifType)
+	local template = playerGui:FindFirstChild("NotificationTemplate")
+	if not template then return end
+	local clone = template:Clone()
+	clone.Name = "Notification"
+	clone.Title.Text = title or ""
+	clone.Message.Text = message or ""
+	clone.NotificationType.Text = notifType or "Info"
+	clone.Position = UDim2.new(1.1, 0, 0.8 - (#notificationQueue * 0.08), 0)
+	clone.Visible = true
+	clone.Parent = playerGui
+	table.insert(notificationQueue, clone)
+	TweenService:Create(clone, TweenInfo.new(0.4, Enum.EasingStyle.Quart), {Position = UDim2.new(1, -310, clone.Position.Y.Scale, 0)}):Play()
+	task.delay(duration or 5, function()
+		TweenService:Create(clone, TweenInfo.new(0.3), {Position = UDim2.new(1.1, 0, clone.Position.Y.Scale, 0)}):Play()
+		task.delay(0.3, function()
+			for i, n in ipairs(notificationQueue) do if n == clone then table.remove(notificationQueue, i) break end end
+			clone:Destroy()
+		end)
+	end)
+	while #notificationQueue > MAX_VISIBLE do
+		local old = table.remove(notificationQueue, 1)
+		if old then old:Destroy() end
+	end
+end
+NotificationClient:Init()
+return NotificationClient]==], _SPS)
+
+		----------------------------------------------------------------
+		-- STARTERGUI (ScreenGuis with LocalScripts)
+		----------------------------------------------------------------
+		pcall(function()
+		local _SG = service.StarterGui
+
+		local function _makeScreenGui(name, parent)
+			local gui = Instance.new("ScreenGui")
+			gui.Name = name
+			gui.ResetOnSpawn = false
+			gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+			gui.IgnoreGuiInset = false
+			gui.Parent = parent or _SG
+			return gui
+		end
+
+		local _mainHUD = _makeScreenGui("MainHUD")
+
+		local _healthBar = Instance.new("Frame")
+		_healthBar.Name = "HealthBar"
+		_healthBar.Size = UDim2.new(0.2, 0, 0.02, 0)
+		_healthBar.Position = UDim2.new(0.01, 0, 0.95, 0)
+		_healthBar.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+		_healthBar.BorderSizePixel = 0
+		_healthBar.Parent = _mainHUD
+
+		local _manaBar = Instance.new("Frame")
+		_manaBar.Name = "ManaBar"
+		_manaBar.Size = UDim2.new(0.15, 0, 0.02, 0)
+		_manaBar.Position = UDim2.new(0.01, 0, 0.93, 0)
+		_manaBar.BackgroundColor3 = Color3.fromRGB(50, 100, 255)
+		_manaBar.BorderSizePixel = 0
+		_manaBar.Parent = _mainHUD
+
+		local _xpBar = Instance.new("Frame")
+		_xpBar.Name = "XPBar"
+		_xpBar.Size = UDim2.new(0.25, 0, 0.015, 0)
+		_xpBar.Position = UDim2.new(0.01, 0, 0.915, 0)
+		_xpBar.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
+		_xpBar.BorderSizePixel = 0
+		_xpBar.Parent = _mainHUD
+
+		local _coinLabel = Instance.new("TextLabel")
+		_coinLabel.Name = "CoinLabel"
+		_coinLabel.Size = UDim2.new(0.1, 0, 0.03, 0)
+		_coinLabel.Position = UDim2.new(0.01, 0, 0.88, 0)
+		_coinLabel.BackgroundTransparency = 1
+		_coinLabel.Text = "0"
+		_coinLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
+		_coinLabel.TextScaled = true
+		_coinLabel.Font = Enum.Font.GothamBold
+		_coinLabel.TextXAlignment = Enum.TextXAlignment.Left
+		_coinLabel.Parent = _mainHUD
+
+		local _levelLabel = Instance.new("TextLabel")
+		_levelLabel.Name = "LevelLabel"
+		_levelLabel.Size = UDim2.new(0.08, 0, 0.03, 0)
+		_levelLabel.Position = UDim2.new(0.01, 0, 0.85, 0)
+		_levelLabel.BackgroundTransparency = 1
+		_levelLabel.Text = "Lv. 1"
+		_levelLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+		_levelLabel.TextScaled = true
+		_levelLabel.Font = Enum.Font.GothamBold
+		_levelLabel.TextXAlignment = Enum.TextXAlignment.Left
+		_levelLabel.Parent = _mainHUD
+
+		-- ShopGUI
+		local _shopGui = _makeScreenGui("ShopGUI")
+		local _shopFrame = Instance.new("Frame")
+		_shopFrame.Name = "ShopFrame"
+		_shopFrame.Size = UDim2.new(0.4, 0, 0.6, 0)
+		_shopFrame.Position = UDim2.new(0.3, 0, 0.2, 0)
+		_shopFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+		_shopFrame.BorderSizePixel = 0
+		_shopFrame.Visible = false
+		_shopFrame.Parent = _shopGui
+		local _shopTitle = Instance.new("TextLabel")
+		_shopTitle.Size = UDim2.new(1, 0, 0.1, 0)
+		_shopTitle.BackgroundTransparency = 1
+		_shopTitle.Text = "Shop"
+		_shopTitle.TextColor3 = Color3.fromRGB(255, 215, 0)
+		_shopTitle.TextScaled = true
+		_shopTitle.Font = Enum.Font.GothamBold
+		_shopTitle.Parent = _shopFrame
+
+		-- InventoryGUI
+		local _invGui = _makeScreenGui("InventoryGUI")
+		local _invFrame = Instance.new("Frame")
+		_invFrame.Name = "InventoryFrame"
+		_invFrame.Size = UDim2.new(0.35, 0, 0.55, 0)
+		_invFrame.Position = UDim2.new(0.325, 0, 0.225, 0)
+		_invFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+		_invFrame.BorderSizePixel = 0
+		_invFrame.Visible = false
+		_invFrame.Parent = _invGui
+		local _invTitle = Instance.new("TextLabel")
+		_invTitle.Size = UDim2.new(1, 0, 0.08, 0)
+		_invTitle.BackgroundTransparency = 1
+		_invTitle.Text = "Inventory"
+		_invTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+		_invTitle.TextScaled = true
+		_invTitle.Font = Enum.Font.GothamBold
+		_invTitle.Parent = _invFrame
+		local _invGrid = Instance.new("ScrollingFrame")
+		_invGrid.Name = "ItemGrid"
+		_invGrid.Size = UDim2.new(0.95, 0, 0.85, 0)
+		_invGrid.Position = UDim2.new(0.025, 0, 0.1, 0)
+		_invGrid.BackgroundTransparency = 1
+		_invGrid.BorderSizePixel = 0
+		_invGrid.CanvasSize = UDim2.new(0, 0, 2, 0)
+		_invGrid.ScrollBarThickness = 4
+		_invGrid.Parent = _invFrame
+		local _invGridLayout = Instance.new("UIGridLayout")
+		_invGridLayout.CellSize = UDim2.new(0, 60, 0, 60)
+		_invGridLayout.CellPadding = UDim2.new(0, 5, 0, 5)
+		_invGridLayout.Parent = _invGrid
+
+		-- SettingsGUI
+		local _settingsGui = _makeScreenGui("SettingsGUI")
+		local _settingsFrame = Instance.new("Frame")
+		_settingsFrame.Name = "SettingsFrame"
+		_settingsFrame.Size = UDim2.new(0.3, 0, 0.5, 0)
+		_settingsFrame.Position = UDim2.new(0.35, 0, 0.25, 0)
+		_settingsFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+		_settingsFrame.BorderSizePixel = 0
+		_settingsFrame.Visible = false
+		_settingsFrame.Parent = _settingsGui
+		local _settingsTitle = Instance.new("TextLabel")
+		_settingsTitle.Size = UDim2.new(1, 0, 0.1, 0)
+		_settingsTitle.BackgroundTransparency = 1
+		_settingsTitle.Text = "Settings"
+		_settingsTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+		_settingsTitle.TextScaled = true
+		_settingsTitle.Font = Enum.Font.GothamBold
+		_settingsTitle.Parent = _settingsFrame
+
+		----------------------------------------------------------------
+		-- WORKSPACE (visual-only, no physics objects)
+		----------------------------------------------------------------
+		pcall(function()
+		local _workspace = workspace
+
+		local _atmosphere = Instance.new("Atmosphere")
+		_atmosphere.Name = "GameAtmosphere"
+		_atmosphere.Density = 0.3
+		_atmosphere.Offset = 0.25
+		_atmosphere.Color = Color3.fromRGB(199, 216, 255)
+		_atmosphere.Decay = Color3.fromRGB(92, 108, 138)
+		_atmosphere.Haze = 0.5
+		_atmosphere.Parent = _workspace
+
+		local _bloom = Instance.new("BloomEffect")
+		_bloom.Name = "GameBloom"
+		_bloom.Intensity = 0.5
+		_bloom.Size = 24
+		_bloom.Threshold = 2
+		_bloom.Parent = _workspace
+
+		local _colorCorrection = Instance.new("ColorCorrectionEffect")
+		_colorCorrection.Name = "GameColorCorrection"
+		_colorCorrection.Brightness = 0
+		_colorCorrection.Contrast = 0.1
+		_colorCorrection.Saturation = 0.2
+		_colorCorrection.TintColor = Color3.fromRGB(255, 255, 255)
+		_colorCorrection.Parent = _workspace
+
+		local _sunRays = Instance.new("SunRaysEffect")
+		_sunRays.Name = "GameSunRays"
+		_sunRays.Intensity = 0.1
+		_sunRays.Spread = 0.8
+		_sunRays.Parent = _workspace
+
+		end) -- end workspace pcall
+		end) -- end startergui pcall
+
+		----------------------------------------------------------------
+		-- NOW SAVE THE HIERARCHY (all fake instances are parented, so they get embedded)
+		----------------------------------------------------------------
 
 		save_hierarchy(ToSaveList)
 
