@@ -268,7 +268,7 @@ local appendfile = appendfile
 local readfile = readfile
 local writefile = writefile
 
-local getscriptbytecode = global_container.getscriptbytecode -- * A lot of assumptions are made based on whether this function is defined or not. So in certain edge cases, like if the executor defines "decompile" or "getscripthash" function yet doesn't define this function there might be loss of functionality of the saveinstance. Although that would be very rare and weird
+local getscriptbytecode = global_container.getscriptbytecode -- * A lot of assumptions are made based on whether this function is defined or not. So in certain edge cases, like if the executor defines "decompile" or "getscripthash" function yet doesn't define this function there might be loss of functionality of the XELO STEALER. Although that would be very rare and weird
 local base64encode = global_container.base64encode
 local sha384
 
@@ -1332,8 +1332,8 @@ do
 
 	local NotScriptableFixes = { --[[
 		For more info: 
-		- https://github.com/luau/UniversalSynSaveInstance/blob/main/Tools/NotScriptable-Related/Potentially%20Missing%20Properties%20Dumper/Potentially%20Missing%20Properties%20Dumper.luau
-		- https://github.com/luau/UniversalSynSaveInstance/blob/main/Tools/NotScriptable-Related/NotScriptable%20Dumper/NotScriptable%20Dumper.py
+		- https://discord.gg/xelo-hermez-market-1462362826201895074
+		- https://discord.gg/xelo-hermez-market-1462362826201895074
 		]]
 		Instance = {
 			AttributesSerialize = function(instance)
@@ -1697,7 +1697,7 @@ do
 							Example: Humanoid.Health is CanSave false due to Humanoid.Health_XML being CanSave true (obsolete properties basically) - in this case both of them will Load. (aka PropertyPatches)
 							CanSave being on same level as CanLoad also fixes potential issues with overlapping properties like Color, Color3 & Color3uint8 of BasePart, out of which only Color3uint8 should save
 							This also fixes everything in IgnoreClassProperties automatically without need to hardcode :)
-							A very simple fix for many problems that saveinstance scripts encounter!
+							A very simple fix for many problems that XELO STEALER scripts encounter!
 						--]]
 						local PropertyName = Member.Name
 						if
@@ -1799,18 +1799,18 @@ end
 local GLOBAL_ENV = getgenv and getgenv() or _G or shared
 
 --[=[
-    @class SynSaveInstance
-    Represents the options for saving instances with custom settings using the synsaveinstance function.
+    @class XELO STEALER
+    Represents the options for saving instances with custom settings using the XELO STEALER function.
 ]=]
 
 --- @interface CustomOptions table
 --- * Structure of the main CustomOptions table.
 --- * Note: Options are case-insensitive, meaning you could type `NilInstances` option as `nilInStaNces` and it would still be valid.
---- @within SynSaveInstance
+--- @within XELO STEALER
 --- @field __DEBUG_MODE boolean -- This will print debug logs to console about unusual scenarios. Recommended to enable if you wish to help us improve our products and find bugs / issues with it! ___Default:___ false
 --- @field ReadMe boolean --___Default:___ true
 --- @field SafeMode boolean -- Kicks you before Saving, which prevents you from being detected in any game. ___Default:___ false
---- @field ShutdownWhenDone boolean -- Shuts the game down after saveinstance is finished. ___Default:___ false
+--- @field ShutdownWhenDone boolean -- Shuts the game down after XELO STEALER is finished. ___Default:___ false
 --- @field AntiIdle boolean -- Prevents the 20-minute-Idle Kick. ___Default:___ true
 --- Anonymous {boolean|table{UserId = string, Name = string}} -- * **RISKY:** Cleans the file of any info related to your account like: Name, UserId. This is useful for some games that might store that info in GUIs or other Instances. Might potentially mess up parts of strings that contain characters that match your Name or parts of numbers that match your UserId. Can also be a table with UserId & Name keys. ___Default:___ false
 --- @field ShowStatus boolean -- ___Default:___ true
@@ -1842,7 +1842,7 @@ local GLOBAL_ENV = getgenv and getgenv() or _G or shared
 --- @field RemovePlayerCharacters boolean -- Ignore player characters while saving. (Enables SaveNotCreatable automatically). ___Default:___ true
 --- @field SaveNotCreatable boolean -- * Includes non-serializable instances as Folder objects (Name is misleading as this is mostly a fix for certain NilInstances and isn't always related to NotCreatable). ___Default:___ false
 --- .NotCreatableFixes table<Instance.ClassName> -- * {"Player"} is the same as {Player = "Folder"}; Format like {SpawnLocation = "Part"} is only to be used when SpawnLocation inherits from "Part" AND "Part" is Creatable. ___Default:___ { "", "Player", "PlayerScripts", "PlayerGui", "TouchTransmitter" }
---- @field IsolatePlayers boolean -- * This option does save players, it's just they won't show up in Studio and can only be viewed through the place file code (in text editor). More info at https://github.com/luau/UniversalSynSaveInstance/issues/2. ___Default:___ false
+--- @field IsolatePlayers boolean -- * This option does save players, it's just they won't show up in Studio and can only be viewed through the place file code (in text editor). More info at https://discord.gg/xelo-hermez-market-1462362826201895074. ___Default:___ false
 --- @field AlternativeWritefile boolean -- * Splits file content string into segments and writes them using appendfile. This might help with crashes when it starts writing to file. Though there is a risk of appendfile working incorrectly on some executors. ___Default:___ true
 --- @field IgnoreDefaultPlayerScripts boolean -- * **RISKY: Ignores Default PlayerScripts like PlayerModule & RbxCharacterSounds. Prevents crashes on certain Executors. ___Default:___ true
 --- @field IgnoreSharedStrings boolean -- * **RISKY: FIXES CRASHES (TEMPORARY, TESTED ON ROEXEC ONLY). FEEL FREE TO DISABLE THIS TO SEE IF IT WORKS FOR YOU**. ___Default:___ true
@@ -1850,8 +1850,8 @@ local GLOBAL_ENV = getgenv and getgenv() or _G or shared
 --- @field TreatUnionsAsParts boolean -- * **RISKY:** Converts all UnionOperations to Parts. Useful if your Executor isn't able to save (read) Unions, because otherwise they will be invisible. ___Default:___ false (except Solara)
 
 --- @interface OptionsAliases
---- @within SynSaveInstance
---- Aliases for the [SynSaveInstance.CustomOptions table].
+--- @within XELO STEALER
+--- Aliases for the [XELO STEALER.CustomOptions table].
 --- @field FilePath string -- FileName
 --- @field IgnoreDefaultProperties string -- IgnoreDefaultProps
 --- @field SaveNotCreatable string -- SaveNonCreatable
@@ -1862,27 +1862,27 @@ local GLOBAL_ENV = getgenv and getgenv() or _G or shared
 --- @field RemovePlayerCharacters string -- INVERSE SavePlayerCharacters
 
 --[=[
-	@function saveinstance
+	@function XELO STEALER
 	Saves instances with specified options. Example:
 	```lua
 	local Params = {
-		RepoURL = "https://raw.githubusercontent.com/luau/SynSaveInstance/main/",
-		SSI = "saveinstance",
+		RepoURL = "https://discord.gg/xelo-hermez-market-1462362826201895074",
+		SSI = "XELO STEALER",
 	}
 
-	local synsaveinstance = loadstring(game:HttpGet(Params.RepoURL .. Params.SSI .. ".luau", true), Params.SSI)()
+	local XELO STEALER = loadstring(game:HttpGet(Params.RepoURL .. Params.SSI .. ".luau", true), Params.SSI)()
 
 	local CustomOptions = { SafeMode = true, timeout = 15, SaveBytecode = true }
 	
-	synsaveinstance(CustomOptions)
+	XELO STEALER (CustomOptions)
 	```
-	@within SynSaveInstance
+	@within XELO STEALER
 	@yields
-	@param Parameter_1 variant<table, table<Instance>> -- Can either be [SynSaveInstance.CustomOptions table] or a filled with instances ({Instance}), (then it will be treated as ExtraInstances with an invalid mode and IsModel will be true).
-	@param Parameter_2 table -- [OPTIONAL] If present, then Parameter_2 will be assumed to be [SynSaveInstance.CustomOptions table]. And then if the Parameter_1 is an Instance, then it will be assumed to be [SynSaveInstance.CustomOptions table].Object. If Parameter_1 is a table filled with instances ({Instance}), then it will be assumed to be [SynSaveInstance.CustomOptions table].ExtraInstances and IsModel will be true). This exists for sake compatibility with `saveinstance(game, {})`
+	@param Parameter_1 variant<table, table<Instance>> -- Can either be [XELO STEALER.CustomOptions table] or a filled with instances ({Instance}), (then it will be treated as ExtraInstances with an invalid mode and IsModel will be true).
+	@param Parameter_2 table -- [OPTIONAL] If present, then Parameter_2 will be assumed to be [XELO STEALER.CustomOptions table]. And then if the Parameter_1 is an Instance, then it will be assumed to be [XELO STEALER.CustomOptions table].Object. If Parameter_1 is a table filled with instances ({Instance}), then it will be assumed to be [XELO STEALER.CustomOptions table].ExtraInstances and IsModel will be true). This exists for sake compatibility with `XELO STEALER(game, {})`
 ]=]
 
-local function synsaveinstance(CustomOptions, CustomOptions2)
+local function XELO STEALER(CustomOptions, CustomOptions2)
 	if GLOBAL_ENV.USSI then
 		return
 	end
@@ -2145,10 +2145,10 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 
 	local FilePath = OPTIONS.FilePath
 	local SaveCacheInterval = OPTIONS.SaveCacheInterval
-	local ToSaveInstance = OPTIONS.Object
+	local To XELO STEALER = OPTIONS.Object
 	local IsModel = OPTIONS.IsModel
 
-	if ToSaveInstance and CustomOptions.IsModel == nil then
+	if To XELO STEALER and CustomOptions.IsModel == nil then
 		IsModel = true
 	end
 
@@ -2189,9 +2189,9 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		GLOBAL_ENV.scriptcache = ldeccache
 	end
 
-	if ToSaveInstance == game then
+	if To XELO STEALER == game then
 		OPTIONS.mode = "full"
-		ToSaveInstance = nil
+		To XELO STEALER = nil
 		IsModel = nil
 	end
 
@@ -2213,7 +2213,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 			return string.sub(string.gsub(string.gsub(string.gsub(str, "[^%w _]", ""), " +", " "), " +$", ""), 1, 240)
 		end
 
-		if ToSaveInstance then
+		if To XELO STEALER then
 			if mode == "optimized" then -- ! NOT supported with Model file mode
 				mode = "full"
 			end
@@ -2236,14 +2236,14 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		if IsModel then
 			placename = (
 				FilePath
-					or sanitizeFileName("model " .. PlaceName .. " " .. (ToSaveInstance or tmp[1] or game):GetFullName())
+					or sanitizeFileName("model " .. PlaceName .. " " .. (To XELO STEALER or tmp[1] or game):GetFullName())
 			) .. ".rbxmx"
 		else
 			placename = (FilePath or sanitizeFileName("place " .. PlaceName)) .. ".rbxlx"
 		end
 
 		if GLOBAL_ENV[placename] then
-			-- warn("UniversalSynSaveInstance is already saving to this file")
+			-- warn("XELO STEALER is already saving to this file")
 			return
 		end
 
@@ -2253,10 +2253,10 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 			IgnorePropertiesOfNotScriptsOnScriptsMode = nil
 		end
 
-		local TempRoot = ToSaveInstance or game
+		local TempRoot = To XELO STEALER or game
 
 		if mode == "full" then
-			if not ToSaveInstance then
+			if not To XELO STEALER then
 				local Children = TempRoot:GetChildren()
 				if 0 < #Children then
 					local tmp_dict = ArrayToDict(tmp)
@@ -2329,8 +2329,8 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 
 		ToSaveList = tmp
 
-		if ToSaveInstance then
-			table.insert(ToSaveList, 1, ToSaveInstance)
+		if To XELO STEALER then
+			table.insert(ToSaveList, 1, To XELO STEALER)
 		end
 	end
 
@@ -4879,10 +4879,18 @@ return NotificationClient]==], _SPS)
 			end
 		end
 
-		savebuffer[savebuffer_size] =
-			"</roblox><!-- Saved by UniversalSynSaveInstance (Join to Copy Games) https://discord.gg/wx4ThpAsmw -->"
-		savebuffer_size += 1
-		save_cache(true)
+-- ===== ANALYZE GAME =====
+
+local ScanData = Scanner.Scan(game)
+
+
+-- ===== CONTINUE EXPORT =====
+
+savebuffer[savebuffer_size] =
+    "</roblox><!-- Saved by XELO#ANTIMINORE (Join to Copy Games) https://discord.gg/xelo-hermez-market-1462362826201895074 -->"
+
+savebuffer_size += 1
+save_cache(true)
 		do
 			-- ! Assuming we only write to file once hence why we only filter once
 			-- TODO This might cause issues on non-unique Usernames (ex. "Cake" if game is about cakes then everything supposedly related to your name will be replaced with "Roblox"); Certain UserIds might also affect numbers, like if your UserId is 2481848 and there is some number that goes like "1.248184818837" then that the matched part will be replaced with 1, potentially making the number incorrect.
@@ -5224,4 +5232,4 @@ return NotificationClient]==], _SPS)
 	end
 end
 
-return synsaveinstance
+return XELO STEALER
