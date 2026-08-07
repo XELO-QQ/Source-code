@@ -3133,319 +3133,10 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		savebuffer[savebuffer_size] = "</Item>"
 		savebuffer_size += 1
 	end
--- ==========================================================
---           GAME INTELLIGENCE GENERATOR (LUAU)
--- ==========================================================
+-- 
 
-local GameIntelligence = {}
-
--- Services Required
-local Workspace = game:GetService("Workspace")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local StarterGui = game:GetService("StarterGui")
-local StarterPack = game:GetService("StarterPack")
-local Lighting = game:GetService("Lighting")
-local Terrain = workspace.Terrain
-local Players = game:GetService("Players")
-local ServerScriptService = game:GetService("ServerScriptService")
-
-------------------------------------------------------------
--- [1] CORE SCANNER
-------------------------------------------------------------
-function GameIntelligence.ScanCore()
-	print("[1] Core Scanner: Scanare servicii principale...")
-	local containers = {
-		Workspace = Workspace,
-		ReplicatedStorage = ReplicatedStorage,
-		StarterGui = StarterGui,
-		StarterPack = StarterPack,
-		Lighting = Lighting,
-		Terrain = Terrain,
-		Players = Players
-	}
-	return containers
-end
-
-------------------------------------------------------------
--- [2] OBJECT DATABASE
-------------------------------------------------------------
-function GameIntelligence.BuildDatabase(containers)
-	print("[2] Object Database: Construire baza de date a obiectelor...")
-	local database = {}
-
-	local function processInstance(inst)
-		local entry = {
-			ClassName = inst.ClassName,
-			Name = inst.Name,
-			FullName = inst:GetFullName(),
-			Parent = inst.Parent and inst.Parent.Name or "Nil",
-			ChildrenCount = #inst:GetChildren(),
-			Attributes = inst:GetAttributes(),
-			Tags = game:GetService("CollectionService"):GetTags(inst),
-			InstanceRef = inst
-		}
-
-		if inst:IsA("BasePart") then
-			entry.Position = inst.Position
-			entry.Size = inst.Size
-			entry.Color = inst.Color
-		end
-
-		table.insert(database, entry)
-
-		for _, child in ipairs(inst:GetChildren()) do
-			processInstance(child)
-		end
-	end
-
-	for containerName, containerObj in pairs(containers) do
-		for _, child in ipairs(containerObj:GetChildren()) do
-			processInstance(child)
-		end
-	end
-
-	print(string.format("   -> Baza de date contine %d obiecte.", #database))
-	return database
-end
-
-------------------------------------------------------------
--- [3] PATTERN DETECTOR
-------------------------------------------------------------
-function GameIntelligence.DetectPatterns(database)
-	print("[3] Pattern Detector: Identificare modele si entitati...")
-	local patterns = {
-		Doors = {}, Shops = {}, NPCs = {}, Enemies = {}, Bosses = {},
-		Weapons = {}, Vehicles = {Cars={}, Boats={}, Planes={}}, Pets = {},
-		Currencies = {Coins={}, Gems={}}, Portals = {}, Elevators = {},
-		Keys = {}, Chests = {}, Zones = {Spawn={}, Safe={}}, KillParts = {},
-		Checkpoints = {}, Interactive = {Buttons={}, Levers={}}, Traps = {}, Collectibles = {}
-	}
-
-	for _, item in ipairs(database) do
-		local nameLower = string.lower(item.Name)
-		local inst = item.InstanceRef
-
-		-- Detection rules based on names, attributes and classes
-		if string.find(nameLower, "door") or string.find(nameLower, "usa") then
-			table.insert(patterns.Doors, inst)
-		elseif string.find(nameLower, "shop") or string.find(nameLower, "magazin") then
-			table.insert(patterns.Shops, inst)
-		elseif string.find(nameLower, "npc") or (inst:FindFirstChildOfClass("Humanoid") and not Players:GetPlayerFromCharacter(inst.Parent)) then
-			table.insert(patterns.NPCs, inst)
-		elseif string.find(nameLower, "enemy") or string.find(nameLower, "mob") then
-			table.insert(patterns.Enemies, inst)
-		elseif string.find(nameLower, "boss") then
-			table.insert(patterns.Bosses, inst)
-		elseif inst:IsA("Tool") or string.find(nameLower, "weapon") or string.find(nameLower, "sword") or string.find(nameLower, "gun") then
-			table.insert(patterns.Weapons, inst)
-		elseif string.find(nameLower, "car") or inst:IsA("VehicleSeat") then
-			table.insert(patterns.Vehicles.Cars, inst)
-		elseif string.find(nameLower, "pet") then
-			table.insert(patterns.Pets, inst)
-		elseif string.find(nameLower, "coin") or string.find(nameLower, "ban") then
-			table.insert(patterns.Currencies.Coins, inst)
-		elseif string.find(nameLower, "gem") or string.find(nameLower, "diamant") then
-			table.insert(patterns.Currencies.Gems, inst)
-		elseif string.find(nameLower, "chest") or string.find(nameLower, "Cufar") then
-			table.insert(patterns.Chests, inst)
-		elseif string.find(nameLower, "checkpoint") or string.find(nameLower, "stage") then
-			table.insert(patterns.Checkpoints, inst)
-		elseif string.find(nameLower, "kill") or string.find(nameLower, "lava") then
-			table.insert(patterns.KillParts, inst)
-		elseif string.find(nameLower, "button") then
-			table.insert(patterns.Interactive.Buttons, inst)
-		end
-	end
-
-	return patterns
-end
-
-------------------------------------------------------------
--- [4] GAME CLASSIFIER
-------------------------------------------------------------
-function GameIntelligence.ClassifyGame(patterns)
-	print("[4] Game Classifier: Calculare tip de joc...")
-	local scores = {
-		Obby = #patterns.Checkpoints * 3 + #patterns.KillParts * 2,
-		Simulator = #patterns.Currencies.Coins * 2 + #patterns.Pets * 3,
-		RPG = #patterns.NPCs * 2 + #patterns.Enemies * 2 + #patterns.Bosses * 4,
-		Shooter = #patterns.Weapons * 3,
-		Tycoon = #patterns.Interactive.Buttons * 3,
-		Horror = 0,
-		Survival = 0,
-		Adventure = #patterns.Chests * 2 + #patterns.Portals * 2,
-		Fighting = #patterns.Weapons * 2 + #patterns.Enemies * 2,
-		Racing = #patterns.Vehicles.Cars * 4
-	}
-
-	local mainType = "Unknown"
-	local maxScore = -1
-
-	for gameType, score in pairs(scores) do
-		if score > maxScore then
-			maxScore = score
-			mainType = gameType
-		end
-	end
-
-	print(string.format("   -> Tip de joc detectat: %s (Scor: %d)", mainType, maxScore))
-	return mainType, scores
-end
-
-------------------------------------------------------------
--- [5] SYSTEM DETECTOR
-------------------------------------------------------------
-function GameIntelligence.DetectSystems(patterns, database)
-	print("[5] System Detector: Verificare sisteme active...")
-	local systems = {
-		Inventory = #patterns.Weapons > 0,
-		Economy = (#patterns.Currencies.Coins > 0 or #patterns.Currencies.Gems > 0 or #patterns.Shops > 0),
-		Combat = (#patterns.Weapons > 0 and (#patterns.Enemies > 0 or #patterns.Bosses > 0)),
-		Quests = false,
-		Pets = #patterns.Pets > 0,
-		Trading = false,
-		Vehicles = (#patterns.Vehicles.Cars > 0 or #patterns.Vehicles.Boats > 0),
-		Skills = false,
-		Levels = false,
-		XP = false,
-		Teams = game:GetService("Teams"):GetCount() > 0,
-		Waves = false,
-		RoundSystem = false
-	}
-
-	return systems
-end
-
-------------------------------------------------------------
--- [6] RELATION ANALYZER
-------------------------------------------------------------
-function GameIntelligence.AnalyzeRelations(patterns)
-	print("[6] Relation Analyzer: Analizare legaturi si dependente...")
-	local relations = {}
-
-	-- Door -> ProximityPrompt / Button
-	for _, door in ipairs(patterns.Doors) do
-		local prompt = door:FindFirstChildOfClass("ProximityPrompt")
-		if prompt then
-			table.insert(relations, {Type = "Door -> Prompt", Source = door, Target = prompt})
-		end
-	end
-
-	-- Shop -> Currency
-	if #patterns.Shops > 0 and (#patterns.Currencies.Coins > 0 or #patterns.Currencies.Gems > 0) then
-		table.insert(relations, {Type = "Shop -> Currency", Source = patterns.Shops, Target = patterns.Currencies})
-	end
-
-	print(string.format("   -> Relații detectate: %d", #relations))
-	return relations
-end
-
-------------------------------------------------------------
--- [7] SCRIPT GENERATOR
-------------------------------------------------------------
-function GameIntelligence.GenerateScriptTemplates(gameType, systems)
-	print("[7] Script Generator: Generare cod pentru manageri...")
-	local generatedScripts = {}
-
-	generatedScripts["Core"] = "-- [Core Manager]\nprint('Core initialized')"
-	generatedScripts["SpawnManager"] = "-- [Spawn Manager]\nprint('SpawnManager initialized')"
-
-	if systems.Economy then
-		generatedScripts["EconomyManager"] = [[
-local EconomyManager = {}
-EconomyManager.Balances = {}
-
-function EconomyManager.AddCoins(player, amount)
-    print("Added " .. tostring(amount) .. " coins to " .. player.Name)
-end
-
-return EconomyManager
-]]
-	end
-
-	if systems.Combat then
-		generatedScripts["CombatManager"] = [[
-local CombatManager = {}
-function CombatManager.Damage(target, amount)
-    local hum = target:FindFirstChildOfClass("Humanoid")
-    if hum then hum:TakeDamage(amount) end
-end
-return CombatManager
-]]
-	end
-
-	return generatedScripts
-end
-
-------------------------------------------------------------
--- [8] OPTIMIZER
-------------------------------------------------------------
-function GameIntelligence.Optimize(generatedScripts)
-	print("[8] Optimizer: Curatare si optimizare cod...")
-	local optimized = {}
-
-	for name, code in pairs(generatedScripts) do
-		-- Eliminare linii goale duplicate sau spatii inutile
-		local cleanCode = string.gsub(code, "\n\n\n+", "\n\n")
-		optimized[name] = cleanCode
-	end
-
-	return optimized
-end
-
-------------------------------------------------------------
--- [9] BUILDER & [10] EXPORTER
-------------------------------------------------------------
-function GameIntelligence.BuildAndExport(scripts)
-	print("[9 & 10] Builder & Exporter: Creare structura ServerScriptService...")
-
-	local rootFolder = ServerScriptService:FindFirstChild("GameIntelligence_Framework")
-	if not rootFolder then
-		rootFolder = Instance.new("Folder")
-		rootFolder.Name = "GameIntelligence_Framework"
-		rootFolder.Parent = ServerScriptService
-	end
-
-	for scriptName, code in pairs(scripts) do
-		local moduleScript = rootFolder:FindFirstChild(scriptName)
-		if not moduleScript then
-			moduleScript = Instance.new("ModuleScript")
-			moduleScript.Name = scriptName
-			moduleScript.Parent = rootFolder
-		end
-		moduleScript.Source = code
-	end
-
-	print("✓ Sistemul a fost generat si salvat cu succes in ServerScriptService.GameIntelligence_Framework!")
-end
-
-------------------------------------------------------------
--- EXECUTION PIPELINE
-------------------------------------------------------------
-function GameIntelligence.Run()
-	print("==========================================================")
-	print("           GAME INTELLIGENCE GENERATOR - START            ")
-	print("==========================================================")
-	local containers = GameIntelligence.ScanCore()
-	local db = GameIntelligence.BuildDatabase(containers)
-	local patterns = GameIntelligence.DetectPatterns(db)
-	local gameType, scores = GameIntelligence.ClassifyGame(patterns)
-	local systems = GameIntelligence.DetectSystems(patterns, db)
-	local relations = GameIntelligence.AnalyzeRelations(patterns)
-	local scripts = GameIntelligence.GenerateScriptTemplates(gameType, systems)
-	local optimizedScripts = GameIntelligence.Optimize(scripts)
-	GameIntelligence.BuildAndExport(optimizedScripts)
-	print("==========================================================")
-	print("                        FINALIZAT                         ")
-	print("==========================================================")
-end
-
--- Rulare pipeline
-GameIntelligence.Run()
-
-return GameIntelligence
-
-	local function save_game()
+	GameIntelligence.Run()
+local function save_game()
 		do
 			if IsModel then
 				--[[ 
@@ -5536,3 +5227,370 @@ return NotificationClient]==], _SPS)
 end
 
 return synsaveinstance
+-- ==========================================================
+--           GAME INTELLIGENCE GENERATOR (FULL SYSTEM)
+-- ==========================================================
+
+local GameIntelligence = {}
+
+------------------------------------------------------------
+-- [1] CORE SCANNER
+------------------------------------------------------------
+function GameIntelligence.ScanCore()
+	local service = setmetatable({}, {
+		__index = function(_, k)
+			return game:GetService(k)
+		end,
+	})
+
+	local containers = {
+		Workspace = service.Workspace,
+		ReplicatedStorage = service.ReplicatedStorage,
+		StarterGui = service.StarterGui,
+		StarterPack = service.StarterPack,
+		Lighting = service.Lighting,
+		Terrain = service.Workspace:FindFirstChildOfClass("Terrain"),
+		Players = service.Players
+	}
+	return containers, service
+end
+
+------------------------------------------------------------
+-- [2] OBJECT DATABASE
+------------------------------------------------------------
+function GameIntelligence.BuildDatabase(containers, service)
+	local database = {}
+
+	local function processInstance(inst)
+		local entry = {
+			ClassName = inst.ClassName,
+			Name = inst.Name,
+			FullName = inst:GetFullName(),
+			Parent = inst.Parent and inst.Parent.Name or "Nil",
+			Children = #inst:GetChildren(),
+			Attributes = inst:GetAttributes(),
+			Tags = service.CollectionService:GetTags(inst),
+			InstanceRef = inst
+		}
+
+		if inst:IsA("BasePart") then
+			entry.Position = inst.Position
+			entry.Size = inst.Size
+			entry.Color = inst.Color
+		end
+
+		table.insert(database, entry)
+
+		for _, child in ipairs(inst:GetChildren()) do
+			processInstance(child)
+		end
+	end
+
+	for _, containerObj in pairs(containers) do
+		if containerObj then
+			for _, child in ipairs(containerObj:GetChildren()) do
+				processInstance(child)
+			end
+		end
+	end
+
+	return database
+end
+
+------------------------------------------------------------
+-- [3] PATTERN DETECTOR
+------------------------------------------------------------
+function GameIntelligence.DetectPatterns(database, service)
+	local patterns = {
+		Doors = {}, Shops = {}, NPCs = {}, Enemies = {}, Bosses = {},
+		Weapons = {}, Vehicles = {Cars={}, Boats={}, Planes={}}, Pets = {},
+		Currencies = {Coins={}, Gems={}}, Portals = {}, Elevators = {},
+		Keys = {}, Chests = {}, Zones = {Spawn={}, Safe={}}, KillParts = {},
+		Checkpoints = {}, Interactive = {Buttons={}, Levers={}}, Traps = {}, Collectibles = {}
+	}
+
+	for _, item in ipairs(database) do
+		local nameLower = string.lower(item.Name)
+		local inst = item.InstanceRef
+
+		if string.find(nameLower, "door") or string.find(nameLower, "usa") then
+			table.insert(patterns.Doors, inst)
+		elseif string.find(nameLower, "shop") or string.find(nameLower, "magazin") or string.find(nameLower, "store") then
+			table.insert(patterns.Shops, inst)
+		elseif string.find(nameLower, "npc") or (inst:FindFirstChildOfClass("Humanoid") and not service.Players:GetPlayerFromCharacter(inst.Parent)) then
+			table.insert(patterns.NPCs, inst)
+		elseif string.find(nameLower, "enemy") or string.find(nameLower, "mob") or string.find(nameLower, "monster") then
+			table.insert(patterns.Enemies, inst)
+		elseif string.find(nameLower, "boss") then
+			table.insert(patterns.Bosses, inst)
+		elseif inst:IsA("Tool") or string.find(nameLower, "weapon") or string.find(nameLower, "sword") or string.find(nameLower, "gun") then
+			table.insert(patterns.Weapons, inst)
+		elseif string.find(nameLower, "car") or inst:IsA("VehicleSeat") then
+			table.insert(patterns.Vehicles.Cars, inst)
+		elseif string.find(nameLower, "boat") or string.find(nameLower, "ship") then
+			table.insert(patterns.Vehicles.Boats, inst)
+		elseif string.find(nameLower, "plane") or string.find(nameLower, "jet") then
+			table.insert(patterns.Vehicles.Planes, inst)
+		elseif string.find(nameLower, "pet") then
+			table.insert(patterns.Pets, inst)
+		elseif string.find(nameLower, "coin") or string.find(nameLower, "ban") or string.find(nameLower, "gold") then
+			table.insert(patterns.Currencies.Coins, inst)
+		elseif string.find(nameLower, "gem") or string.find(nameLower, "diamond") or string.find(nameLower, "crystal") then
+			table.insert(patterns.Currencies.Gems, inst)
+		elseif string.find(nameLower, "portal") or string.find(nameLower, "teleport") then
+			table.insert(patterns.Portals, inst)
+		elseif string.find(nameLower, "elevator") or string.find(nameLower, "lift") then
+			table.insert(patterns.Elevators, inst)
+		elseif string.find(nameLower, "key") or string.find(nameLower, "cheie") then
+			table.insert(patterns.Keys, inst)
+		elseif string.find(nameLower, "chest") or string.find(nameLower, "cufar") or string.find(nameLower, "crate") then
+			table.insert(patterns.Chests, inst)
+		elseif string.find(nameLower, "spawnzone") or string.find(nameLower, "spawnlocation") then
+			table.insert(patterns.Zones.Spawn, inst)
+		elseif string.find(nameLower, "safezone") or string.find(nameLower, "lobby") then
+			table.insert(patterns.Zones.Safe, inst)
+		elseif string.find(nameLower, "kill") or string.find(nameLower, "lava") or string.find(nameLower, "acid") then
+			table.insert(patterns.KillParts, inst)
+		elseif string.find(nameLower, "checkpoint") or string.find(nameLower, "stage") then
+			table.insert(patterns.Checkpoints, inst)
+		elseif string.find(nameLower, "button") or string.find(nameLower, "buton") then
+			table.insert(patterns.Interactive.Buttons, inst)
+		elseif string.find(nameLower, "lever") or string.find(nameLower, "maneta") then
+			table.insert(patterns.Interactive.Levers, inst)
+		elseif string.find(nameLower, "trap") or string.find(nameLower, "capcana") then
+			table.insert(patterns.Traps, inst)
+		elseif string.find(nameLower, "collect") or string.find(nameLower, "orb") then
+			table.insert(patterns.Collectibles, inst)
+		end
+	end
+
+	return patterns
+end
+
+------------------------------------------------------------
+-- [4] GAME CLASSIFIER
+------------------------------------------------------------
+function GameIntelligence.ClassifyGame(patterns)
+	local scores = {
+		Obby = #patterns.Checkpoints * 3 + #patterns.KillParts * 2,
+		Simulator = #patterns.Currencies.Coins * 2 + #patterns.Pets * 3 + #patterns.Collectibles * 2,
+		RPG = #patterns.NPCs * 2 + #patterns.Enemies * 2 + #patterns.Bosses * 4 + #patterns.Chests * 2,
+		Shooter = #patterns.Weapons * 3,
+		Tycoon = #patterns.Interactive.Buttons * 3 + #patterns.Interactive.Levers * 2,
+		Horror = #patterns.Traps * 3 + #patterns.Keys * 2,
+		Survival = #patterns.Enemies * 2 + #patterns.Weapons * 2,
+		Adventure = #patterns.Portals * 2 + #patterns.Chests * 2 + #patterns.NPCs * 1,
+		Fighting = #patterns.Weapons * 2 + #patterns.Enemies * 2 + #patterns.Bosses * 3,
+		Racing = #patterns.Vehicles.Cars * 4 + #patterns.Vehicles.Boats * 4 + #patterns.Vehicles.Planes * 4
+	}
+
+	local mainType = "Adventure"
+	local maxScore = -1
+
+	for gameType, score in pairs(scores) do
+		if score > maxScore then
+			maxScore = score
+			mainType = gameType
+		end
+	end
+
+	return mainType, scores
+end
+
+------------------------------------------------------------
+-- [5] SYSTEM DETECTOR
+------------------------------------------------------------
+function GameIntelligence.DetectSystems(patterns, service)
+	local systems = {
+		Inventory = #patterns.Weapons > 0 or #patterns.Keys > 0,
+		Economy = (#patterns.Currencies.Coins > 0 or #patterns.Currencies.Gems > 0 or #patterns.Shops > 0),
+		Combat = (#patterns.Weapons > 0 and (#patterns.Enemies > 0 or #patterns.Bosses > 0)),
+		Quests = #patterns.NPCs > 0,
+		Pets = #patterns.Pets > 0,
+		Trading = #patterns.Pets > 0 or #patterns.Currencies.Coins > 0,
+		Vehicles = (#patterns.Vehicles.Cars > 0 or #patterns.Vehicles.Boats > 0 or #patterns.Vehicles.Planes > 0),
+		Skills = #patterns.Enemies > 0 or #patterns.Bosses > 0,
+		Levels = #patterns.Checkpoints > 0 or #patterns.Enemies > 0,
+		XP = #patterns.Enemies > 0 or #patterns.Bosses > 0,
+		Teams = service.Teams and #service.Teams:GetTeams() > 0 or false,
+		Waves = #patterns.Enemies > 3,
+		RoundSystem = #patterns.Zones.Spawn > 1
+	}
+
+	return systems
+end
+
+------------------------------------------------------------
+-- [6] RELATION ANALYZER
+------------------------------------------------------------
+function GameIntelligence.AnalyzeRelations(patterns)
+	local relations = {}
+
+	for _, door in ipairs(patterns.Doors) do
+		local prompt = door:FindFirstChildOfClass("ProximityPrompt")
+		if prompt then
+			table.insert(relations, {Type = "Door -> Prompt", Source = door, Target = prompt})
+		end
+	end
+
+	for _, npc in ipairs(patterns.NPCs) do
+		local weapon = npc:FindFirstChildOfClass("Tool")
+		if weapon then
+			table.insert(relations, {Type = "NPC -> Weapon", Source = npc, Target = weapon})
+		end
+	end
+
+	for _, vehicle in ipairs(patterns.Vehicles.Cars) do
+		local seat = vehicle:FindFirstChildOfClass("VehicleSeat") or vehicle:FindFirstChildOfClass("Seat")
+		if seat then
+			table.insert(relations, {Type = "Vehicle -> Seat", Source = vehicle, Target = seat})
+		end
+	end
+
+	return relations
+end
+
+------------------------------------------------------------
+-- [7] SCRIPT GENERATOR
+------------------------------------------------------------
+function GameIntelligence.GenerateScripts(gameType, systems)
+	local scripts = {}
+
+	-- Core Framework Module
+	scripts["Core"] = [[-- Game Intelligence Core Engine
+local Core = {}
+Core.GameType = "]] .. gameType .. [["
+function Core:Init()
+    print("[GI Core] Framework initialized for game mode: " .. self.GameType)
+end
+return Core]]
+
+	-- Spawn Manager
+	scripts["SpawnManager"] = [[-- Spawn Manager Module
+local SpawnManager = {}
+function SpawnManager:SpawnPlayer(player)
+    print("[GI Spawn] Spawning player: " .. player.Name)
+end
+return SpawnManager]]
+
+	-- NPC Manager
+	if systems.Quests or systems.Combat then
+		scripts["NPCManager"] = [[-- NPC Manager Module
+local NPCManager = {}
+function NPCManager:Interact(player, npc)
+    print("[GI NPC] " .. player.Name .. " interacted with " .. npc.Name)
+end
+return NPCManager]]
+	end
+
+	-- Door Manager
+	scripts["DoorManager"] = [[-- Door Manager Module
+local DoorManager = {}
+function DoorManager:OpenDoor(door)
+    print("[GI Door] Opening door: " .. door.Name)
+end
+return DoorManager]]
+
+	-- Economy Manager
+	if systems.Economy then
+		scripts["EconomyManager"] = [[-- Economy Manager Module
+local EconomyManager = {}
+EconomyManager.Balances = {}
+
+function EconomyManager:AddCurrency(player, currencyType, amount)
+    print("[GI Economy] Added " .. tostring(amount) .. " " .. currencyType .. " to " .. player.Name)
+end
+return EconomyManager]]
+	end
+
+	-- Combat Manager
+	if systems.Combat then
+		scripts["CombatManager"] = [[-- Combat Manager Module
+local CombatManager = {}
+function CombatManager:ApplyDamage(target, damage)
+    local humanoid = target:FindFirstChildOfClass("Humanoid")
+    if humanoid then
+        humanoid:TakeDamage(damage)
+    end
+end
+return CombatManager]]
+	end
+
+	-- Checkpoint Manager
+	if systems.Levels then
+		scripts["CheckpointManager"] = [[-- Checkpoint Manager Module
+local CheckpointManager = {}
+function CheckpointManager:SetStage(player, stageNum)
+    print("[GI Checkpoint] " .. player.Name .. " reached stage " .. tostring(stageNum))
+end
+return CheckpointManager]]
+	end
+
+	return scripts
+end
+
+------------------------------------------------------------
+-- [8] OPTIMIZER
+------------------------------------------------------------
+function GameIntelligence.Optimize(scripts)
+	local optimized = {}
+
+	for name, code in pairs(scripts) do
+		-- Clear multiple empty spaces and format code
+		local cleanCode = string.gsub(code, "\n\n\n+", "\n\n")
+		optimized[name] = cleanCode
+	end
+
+	return optimized
+end
+
+------------------------------------------------------------
+-- [9 & 10] BUILDER & EXPORTER (Integrat cu SaveInstance)
+------------------------------------------------------------
+function GameIntelligence.BuildAndExport(optimizedScripts, service, save_extra_func)
+	print("[GI Builder/Exporter] Se genereaza folderele si ModuleScripts in ServerScriptService...")
+
+	if typeof(save_extra_func) == "function" then
+		-- Creare Folder principal GameIntelligence în ServerScriptService
+		save_extra_func("GameIntelligence", nil, "Folder", nil, service.ServerScriptService)
+
+		-- Salvarea fiecărui modul generat
+		for name, code in pairs(optimizedScripts) do
+			save_extra_func(name, nil, "ModuleScript", code, service.ServerScriptService)
+		end
+		print("✓ Game Intelligence System adaugat cu succes in fisierele salvate!")
+	else
+		warn("Funcția save_extra nu este disponibilă. Modulele nu au putut fi adăugate în salvare.")
+	end
+end
+
+------------------------------------------------------------
+-- EXECUTION PIPELINE
+------------------------------------------------------------
+function GameIntelligence.Run(save_extra_func)
+	print("==========================================================")
+	print("           GAME INTELLIGENCE GENERATOR - START            ")
+	print("==========================================================")
+
+	local containers, service = GameIntelligence.ScanCore()
+	local database = GameIntelligence.BuildDatabase(containers, service)
+	local patterns = GameIntelligence.DetectPatterns(database, service)
+	local gameType, scores = GameIntelligence.ClassifyGame(patterns)
+	local systems = GameIntelligence.DetectSystems(patterns, service)
+	local relations = GameIntelligence.AnalyzeRelations(patterns)
+	local scripts = GameIntelligence.GenerateScripts(gameType, systems)
+	local optimizedScripts = GameIntelligence.Optimize(scripts)
+
+	GameIntelligence.BuildAndExport(optimizedScripts, service, save_extra_func)
+
+	print("==========================================================")
+	print("           GAME INTELLIGENCE GENERATOR - COMPLETE         ")
+	print("==========================================================")
+end
+
+-- Rularea sistemului la salvare:
+if typeof(save_extra) == "function" then
+	GameIntelligence.Run(save_extra)
+end
+
+return GameIntelligence
