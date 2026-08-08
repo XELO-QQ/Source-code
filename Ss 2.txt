@@ -3133,10 +3133,8 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		savebuffer[savebuffer_size] = "</Item>"
 		savebuffer_size += 1
 	end
--- 
 
-	GameIntelligence.Run()
-local function save_game()
+	local function save_game()
 		do
 			if IsModel then
 				--[[ 
@@ -5226,371 +5224,944 @@ return NotificationClient]==], _SPS)
 	end
 end
 
-return synsaveinstance
--- ==========================================================
---           GAME INTELLIGENCE GENERATOR (FULL SYSTEM)
--- ==========================================================
-
-local GameIntelligence = {}
-
-------------------------------------------------------------
--- [1] CORE SCANNER
-------------------------------------------------------------
-function GameIntelligence.ScanCore()
-	local service = setmetatable({}, {
-		__index = function(_, k)
-			return game:GetService(k)
-		end,
-	})
-
-	local containers = {
-		Workspace = service.Workspace,
-		ReplicatedStorage = service.ReplicatedStorage,
-		StarterGui = service.StarterGui,
-		StarterPack = service.StarterPack,
-		Lighting = service.Lighting,
-		Terrain = service.Workspace:FindFirstChildOfClass("Terrain"),
-		Players = service.Players
-	}
-	return containers, service
+local function safeTableContains(tab, value)
+        if type(tab) ~= "table" then
+                return false
+        end
+        for _, item in ipairs(tab) do
+                if item == value then
+                        return true
+                end
+        end
+        return false
 end
 
-------------------------------------------------------------
--- [2] OBJECT DATABASE
-------------------------------------------------------------
-function GameIntelligence.BuildDatabase(containers, service)
-	local database = {}
-
-	local function processInstance(inst)
-		local entry = {
-			ClassName = inst.ClassName,
-			Name = inst.Name,
-			FullName = inst:GetFullName(),
-			Parent = inst.Parent and inst.Parent.Name or "Nil",
-			Children = #inst:GetChildren(),
-			Attributes = inst:GetAttributes(),
-			Tags = service.CollectionService:GetTags(inst),
-			InstanceRef = inst
-		}
-
-		if inst:IsA("BasePart") then
-			entry.Position = inst.Position
-			entry.Size = inst.Size
-			entry.Color = inst.Color
-		end
-
-		table.insert(database, entry)
-
-		for _, child in ipairs(inst:GetChildren()) do
-			processInstance(child)
-		end
-	end
-
-	for _, containerObj in pairs(containers) do
-		if containerObj then
-			for _, child in ipairs(containerObj:GetChildren()) do
-				processInstance(child)
-			end
-		end
-	end
-
-	return database
+local function safeDeepCopy(tbl)
+        if type(tbl) ~= "table" then
+                return tbl
+        end
+        local copy = {}
+        for key, value in pairs(tbl) do
+                copy[key] = safeDeepCopy(value)
+        end
+        return copy
 end
 
-------------------------------------------------------------
--- [3] PATTERN DETECTOR
-------------------------------------------------------------
-function GameIntelligence.DetectPatterns(database, service)
-	local patterns = {
-		Doors = {}, Shops = {}, NPCs = {}, Enemies = {}, Bosses = {},
-		Weapons = {}, Vehicles = {Cars={}, Boats={}, Planes={}}, Pets = {},
-		Currencies = {Coins={}, Gems={}}, Portals = {}, Elevators = {},
-		Keys = {}, Chests = {}, Zones = {Spawn={}, Safe={}}, KillParts = {},
-		Checkpoints = {}, Interactive = {Buttons={}, Levers={}}, Traps = {}, Collectibles = {}
-	}
+local function buildManagerSource(managerName)
+        local templates = {
+                GameManager = [[
+                        local GameManager = {}
+                        GameManager.__index = GameManager
+                        GameManager.Version = "1.0.0"
 
-	for _, item in ipairs(database) do
-		local nameLower = string.lower(item.Name)
-		local inst = item.InstanceRef
+                        local Players = game:GetService("Players")
 
-		if string.find(nameLower, "door") or string.find(nameLower, "usa") then
-			table.insert(patterns.Doors, inst)
-		elseif string.find(nameLower, "shop") or string.find(nameLower, "magazin") or string.find(nameLower, "store") then
-			table.insert(patterns.Shops, inst)
-		elseif string.find(nameLower, "npc") or (inst:FindFirstChildOfClass("Humanoid") and not service.Players:GetPlayerFromCharacter(inst.Parent)) then
-			table.insert(patterns.NPCs, inst)
-		elseif string.find(nameLower, "enemy") or string.find(nameLower, "mob") or string.find(nameLower, "monster") then
-			table.insert(patterns.Enemies, inst)
-		elseif string.find(nameLower, "boss") then
-			table.insert(patterns.Bosses, inst)
-		elseif inst:IsA("Tool") or string.find(nameLower, "weapon") or string.find(nameLower, "sword") or string.find(nameLower, "gun") then
-			table.insert(patterns.Weapons, inst)
-		elseif string.find(nameLower, "car") or inst:IsA("VehicleSeat") then
-			table.insert(patterns.Vehicles.Cars, inst)
-		elseif string.find(nameLower, "boat") or string.find(nameLower, "ship") then
-			table.insert(patterns.Vehicles.Boats, inst)
-		elseif string.find(nameLower, "plane") or string.find(nameLower, "jet") then
-			table.insert(patterns.Vehicles.Planes, inst)
-		elseif string.find(nameLower, "pet") then
-			table.insert(patterns.Pets, inst)
-		elseif string.find(nameLower, "coin") or string.find(nameLower, "ban") or string.find(nameLower, "gold") then
-			table.insert(patterns.Currencies.Coins, inst)
-		elseif string.find(nameLower, "gem") or string.find(nameLower, "diamond") or string.find(nameLower, "crystal") then
-			table.insert(patterns.Currencies.Gems, inst)
-		elseif string.find(nameLower, "portal") or string.find(nameLower, "teleport") then
-			table.insert(patterns.Portals, inst)
-		elseif string.find(nameLower, "elevator") or string.find(nameLower, "lift") then
-			table.insert(patterns.Elevators, inst)
-		elseif string.find(nameLower, "key") or string.find(nameLower, "cheie") then
-			table.insert(patterns.Keys, inst)
-		elseif string.find(nameLower, "chest") or string.find(nameLower, "cufar") or string.find(nameLower, "crate") then
-			table.insert(patterns.Chests, inst)
-		elseif string.find(nameLower, "spawnzone") or string.find(nameLower, "spawnlocation") then
-			table.insert(patterns.Zones.Spawn, inst)
-		elseif string.find(nameLower, "safezone") or string.find(nameLower, "lobby") then
-			table.insert(patterns.Zones.Safe, inst)
-		elseif string.find(nameLower, "kill") or string.find(nameLower, "lava") or string.find(nameLower, "acid") then
-			table.insert(patterns.KillParts, inst)
-		elseif string.find(nameLower, "checkpoint") or string.find(nameLower, "stage") then
-			table.insert(patterns.Checkpoints, inst)
-		elseif string.find(nameLower, "button") or string.find(nameLower, "buton") then
-			table.insert(patterns.Interactive.Buttons, inst)
-		elseif string.find(nameLower, "lever") or string.find(nameLower, "maneta") then
-			table.insert(patterns.Interactive.Levers, inst)
-		elseif string.find(nameLower, "trap") or string.find(nameLower, "capcana") then
-			table.insert(patterns.Traps, inst)
-		elseif string.find(nameLower, "collect") or string.find(nameLower, "orb") then
-			table.insert(patterns.Collectibles, inst)
-		end
-	end
+                        function GameManager.Init()
+                                if GameManager.Initialized then return end
+                                GameManager.Initialized = true
+                                print("[GameManager] initialized")
+                        end
 
-	return patterns
+                        function GameManager.OnPlayerAdded(player)
+                                if not player then return end
+                                print("[GameManager] Player joined:", player.Name)
+                        end
+
+                        Players.PlayerAdded:Connect(GameManager.OnPlayerAdded)
+                        for _, player in ipairs(Players:GetPlayers()) do
+                                GameManager.OnPlayerAdded(player)
+                        end
+
+                        GameManager.Init()
+                        return GameManager
+                ]],
+                PlayerManager = [[
+                        local PlayerManager = {}
+                        PlayerManager.__index = PlayerManager
+                        PlayerManager.Players = {}
+                        local Players = game:GetService("Players")
+
+                        function PlayerManager.Get(player)
+                                if not player then return nil end
+                                if not PlayerManager.Players[player] then
+                                        PlayerManager.Players[player] = { Coins = 0, Inventory = {}, JoinedAt = os.clock() }
+                                end
+                                return PlayerManager.Players[player]
+                        end
+
+                        Players.PlayerAdded:Connect(function(player)
+                                PlayerManager.Get(player)
+                        end)
+
+                        Players.PlayerRemoving:Connect(function(player)
+                                PlayerManager.Players[player] = nil
+                        end)
+
+                        for _, player in ipairs(Players:GetPlayers()) do
+                                PlayerManager.Get(player)
+                        end
+
+                        return PlayerManager
+                ]],
+                InteractionManager = [[
+                        local InteractionManager = {}
+                        InteractionManager.__index = InteractionManager
+                        InteractionManager.Interactions = {}
+
+                        function InteractionManager.Register(instance)
+                                if not instance then return false end
+                                InteractionManager.Interactions[instance] = true
+                                return true
+                        end
+
+                        function InteractionManager.GetNearby(player, distance)
+                                distance = tonumber(distance) or 20
+                                local character = player and player.Character
+                                if not character or not character.PrimaryPart then
+                                        return {}
+                                end
+                                local result = {}
+                                for instance in pairs(InteractionManager.Interactions) do
+                                        if instance:IsA("BasePart") then
+                                                local mag = (instance.Position - character.PrimaryPart.Position).Magnitude
+                                                if mag <= distance then
+                                                        table.insert(result, instance)
+                                                end
+                                        end
+                                end
+                                return result
+                        end
+
+                        return InteractionManager
+                ]],
+                RemoteManager = [[
+                        local RemoteManager = {}
+                        RemoteManager.__index = RemoteManager
+                        local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+                        function RemoteManager.Ensure(name, className)
+                                className = className or "RemoteEvent"
+                                local folder = ReplicatedStorage:FindFirstChild("Generated")
+                                if not folder then
+                                        folder = Instance.new("Folder")
+                                        folder.Name = "Generated"
+                                        folder.Parent = ReplicatedStorage
+                                end
+                                local existing = folder:FindFirstChild(name)
+                                if existing then return existing end
+                                local remote = Instance.new(className)
+                                remote.Name = name
+                                remote.Parent = folder
+                                return remote
+                        end
+
+                        function RemoteManager.ValidateRequest(player, remote, payload)
+                                if not player or not remote then return false end
+                                if typeof(payload) ~= "table" then return false end
+                                return true
+                        end
+
+                        return RemoteManager
+                ]],
+                DataManager = [[
+                        local DataManager = {}
+                        DataManager.__index = DataManager
+                        DataManager.Store = {}
+
+                        function DataManager.Set(key, value)
+                                DataManager.Store[key] = value
+                        end
+
+                        function DataManager.Get(key, fallback)
+                                if DataManager.Store[key] == nil then
+                                        return fallback
+                                end
+                                return DataManager.Store[key]
+                        end
+
+                        return DataManager
+                ]],
+                NPCManager = [[
+                        local NPCManager = {}
+                        NPCManager.__index = NPCManager
+                        NPCManager.NPCs = {}
+
+                        function NPCManager.Register(npc)
+                                if not npc then return false end
+                                NPCManager.NPCs[npc] = true
+                                return true
+                        end
+
+                        for _, descendant in ipairs(workspace:GetDescendants()) do
+                                if descendant:IsA("Model") and descendant:FindFirstChildOfClass("Humanoid") then
+                                        NPCManager.Register(descendant)
+                                end
+                        end
+
+                        return NPCManager
+                ]],
+                DoorManager = [[
+                        local DoorManager = {}
+                        DoorManager.__index = DoorManager
+                        DoorManager.Doors = {}
+
+                        function DoorManager.Register(door)
+                                if not door then return false end
+                                DoorManager.Doors[door] = true
+                                return true
+                        end
+
+                        for _, descendant in ipairs(workspace:GetDescendants()) do
+                                if string.find(string.lower(descendant.Name), "door", 1, true) then
+                                        DoorManager.Register(descendant)
+                                end
+                        end
+
+                        return DoorManager
+                ]],
+                ToolManager = [[
+                        local ToolManager = {}
+                        ToolManager.__index = ToolManager
+                        ToolManager.Tools = {}
+
+                        function ToolManager.Register(tool)
+                                if not tool then return false end
+                                ToolManager.Tools[tool] = true
+                                return true
+                        end
+
+                        for _, descendant in ipairs(workspace:GetDescendants()) do
+                                if descendant:IsA("Tool") then
+                                        ToolManager.Register(descendant)
+                                end
+                        end
+
+                        return ToolManager
+                ]],
+                CombatManager = [[
+                        local CombatManager = {}
+                        CombatManager.__index = CombatManager
+
+                        function CombatManager.Attack(attacker, target, damage)
+                                if not attacker or not target then return false end
+                                local humanoid = target:FindFirstChildOfClass("Humanoid")
+                                if humanoid then
+                                        humanoid:TakeDamage(tonumber(damage) or 10)
+                                        return true
+                                end
+                                return false
+                        end
+
+                        return CombatManager
+                ]],
+                WeaponManager = [[
+                        local WeaponManager = {}
+                        WeaponManager.__index = WeaponManager
+                        WeaponManager.Weapons = {}
+
+                        function WeaponManager.Register(weapon)
+                                if not weapon then return false end
+                                WeaponManager.Weapons[weapon] = true
+                                return true
+                        end
+
+                        for _, descendant in ipairs(workspace:GetDescendants()) do
+                                if descendant:IsA("Tool") and string.find(string.lower(descendant.Name), "weapon", 1, true) then
+                                        WeaponManager.Register(descendant)
+                                end
+                        end
+
+                        return WeaponManager
+                ]],
+                ShopManager = [[
+                        local ShopManager = {}
+                        ShopManager.__index = ShopManager
+                        ShopManager.Shops = {}
+
+                        function ShopManager.Register(shop)
+                                if not shop then return false end
+                                ShopManager.Shops[shop] = { ItemList = {}, Open = false }
+                                return true
+                        end
+
+                        return ShopManager
+                ]],
+                SpawnManager = [[
+                        local SpawnManager = {}
+                        SpawnManager.__index = SpawnManager
+                        SpawnManager.Spawns = {}
+
+                        function SpawnManager.Register(spawnPart)
+                                if not spawnPart or not spawnPart:IsA("SpawnLocation") then return false end
+                                table.insert(SpawnManager.Spawns, spawnPart)
+                                return true
+                        end
+
+                        for _, descendant in ipairs(workspace:GetDescendants()) do
+                                if descendant:IsA("SpawnLocation") then
+                                        SpawnManager.Register(descendant)
+                                end
+                        end
+
+                        return SpawnManager
+                ]],
+                VehicleManager = [[
+                        local VehicleManager = {}
+                        VehicleManager.__index = VehicleManager
+                        VehicleManager.Vehicles = {}
+
+                        function VehicleManager.Register(vehicle)
+                                if not vehicle then return false end
+                                VehicleManager.Vehicles[vehicle] = true
+                                return true
+                        end
+
+                        return VehicleManager
+                ]],
+                QuestManager = [[
+                        local QuestManager = {}
+                        QuestManager.__index = QuestManager
+                        QuestManager.Quests = {}
+
+                        function QuestManager.Register(name, objective)
+                                QuestManager.Quests[name] = { Objective = objective, Completed = false }
+                        end
+
+                        return QuestManager
+                ]],
+                InventoryManager = [[
+                        local InventoryManager = {}
+                        InventoryManager.__index = InventoryManager
+                        InventoryManager.Data = {}
+
+                        function InventoryManager.Add(player, item, amount)
+                                local data = InventoryManager.Data[player] or {}
+                                data[item] = (data[item] or 0) + (tonumber(amount) or 1)
+                                InventoryManager.Data[player] = data
+                        end
+
+                        function InventoryManager.Get(player)
+                                InventoryManager.Data[player] = InventoryManager.Data[player] or {}
+                                return InventoryManager.Data[player]
+                        end
+
+                        return InventoryManager
+                ]],
+                CurrencyManager = [[
+                        local CurrencyManager = {}
+                        CurrencyManager.__index = CurrencyManager
+                        CurrencyManager.PlayerCurrency = {}
+
+                        function CurrencyManager.Add(player, amount)
+                                if not player then return false end
+                                local currency = CurrencyManager.PlayerCurrency[player] or 0
+                                CurrencyManager.PlayerCurrency[player] = currency + (tonumber(amount) or 0)
+                                return true
+                        end
+
+                        function CurrencyManager.Get(player)
+                                if not player then return 0 end
+                                return CurrencyManager.PlayerCurrency[player] or 0
+                        end
+
+                        return CurrencyManager
+                ]],
+                CheckpointManager = [[
+                        local CheckpointManager = {}
+                        CheckpointManager.__index = CheckpointManager
+                        CheckpointManager.Checkpoints = {}
+
+                        function CheckpointManager.Register(checkpoint)
+                                if not checkpoint then return false end
+                                table.insert(CheckpointManager.Checkpoints, checkpoint)
+                                return true
+                        end
+
+                        return CheckpointManager
+                ]],
+                TeleportManager = [[
+                        local TeleportManager = {}
+                        TeleportManager.__index = TeleportManager
+                        TeleportManager.Teleports = {}
+
+                        function TeleportManager.Register(source, destination)
+                                TeleportManager.Teleports[source] = destination
+                        end
+
+                        return TeleportManager
+                ]],
+                TeamManager = [[
+                        local TeamManager = {}
+                        TeamManager.__index = TeamManager
+                        TeamManager.Teams = {}
+                        local TeamsService = game:GetService("Teams")
+
+                        function TeamManager.Register(name)
+                                if TeamManager.Teams[name] then return TeamManager.Teams[name] end
+                                local team = Instance.new("Team")
+                                team.Name = name
+                                team.Parent = TeamsService
+                                TeamManager.Teams[name] = team
+                                return team
+                        end
+
+                        return TeamManager
+                ]],
+                RoundManager = [[
+                        local RoundManager = {}
+                        RoundManager.__index = RoundManager
+                        RoundManager.State = "Waiting"
+                        RoundManager.Round = 1
+
+                        function RoundManager.Start()
+                                RoundManager.State = "InProgress"
+                                RoundManager.Round += 1
+                                return RoundManager.Round
+                        end
+
+                        return RoundManager
+                ]],
+                PetManager = [[
+                        local PetManager = {}
+                        PetManager.__index = PetManager
+                        PetManager.Pets = {}
+
+                        function PetManager.Register(pet)
+                                if not pet then return false end
+                                PetManager.Pets[pet] = true
+                                return true
+                        end
+
+                        return PetManager
+                ]],
+                TradingManager = [[
+                        local TradingManager = {}
+                        TradingManager.__index = TradingManager
+                        TradingManager.Trades = {}
+
+                        function TradingManager.CreateOffer(player, target, payload)
+                                if not player or not target or type(payload) ~= "table" then return false end
+                                table.insert(TradingManager.Trades, { Player = player, Target = target, Payload = payload })
+                                return true
+                        end
+
+                        return TradingManager
+                ]],
+                KeyboardManager = [[
+                        local KeyboardManager = {}
+                        KeyboardManager.__index = KeyboardManager
+                        KeyboardManager.Keys = {}
+
+                        local UserInputService = game:GetService("UserInputService")
+                        UserInputService.InputBegan:Connect(function(input, gameProcessed)
+                                if not gameProcessed and input.UserInputType == Enum.UserInputType.Keyboard then
+                                        KeyboardManager.Keys[tostring(input.KeyCode)] = true
+                                end
+                        end)
+
+                        return KeyboardManager
+                ]],
+                KeyPressManager = [[
+                        local KeyPressManager = {}
+                        KeyPressManager.__index = KeyPressManager
+                        KeyPressManager.LastKey = nil
+
+                        local UserInputService = game:GetService("UserInputService")
+                        UserInputService.InputBegan:Connect(function(input, gameProcessed)
+                                if not gameProcessed and input.UserInputType == Enum.UserInputType.Keyboard then
+                                        KeyPressManager.LastKey = tostring(input.KeyCode)
+                                end
+                        end)
+
+                        return KeyPressManager
+                ]],
+                KeyboardSoundManager = [[
+                        local KeyboardSoundManager = {}
+                        KeyboardSoundManager.__index = KeyboardSoundManager
+
+                        function KeyboardSoundManager.Play(sound)
+                                if sound and sound:IsA("Sound") then
+                                        sound:Play()
+                                end
+                        end
+
+                        return KeyboardSoundManager
+                ]],
+                KeyAnimationManager = [[
+                        local KeyAnimationManager = {}
+                        KeyAnimationManager.__index = KeyAnimationManager
+
+                        function KeyAnimationManager.Trigger(part)
+                                if not part or not part:IsA("BasePart") then return false end
+                                local tweenInfo = TweenInfo.new(0.08)
+                                local tweenService = game:GetService("TweenService")
+                                local tween = tweenService:Create(part, tweenInfo, { Size = part.Size + Vector3.new(0.05, 0.05, 0.05) })
+                                local tweenBack = tweenService:Create(part, tweenInfo, { Size = part.Size })
+                                tween:Play()
+                                tween.Completed:Connect(function()
+                                        tweenBack:Play()
+                                end)
+                                return true
+                        end
+
+                        return KeyAnimationManager
+                ]],
+                CollectibleManager = [[
+                        local CollectibleManager = {}
+                        CollectibleManager.__index = CollectibleManager
+                        CollectibleManager.Items = {}
+
+                        function CollectibleManager.Register(item)
+                                if not item then return false end
+                                CollectibleManager.Items[item] = true
+                                return true
+                        end
+
+                        return CollectibleManager
+                ]],
+                LeaderboardManager = [[
+                        local LeaderboardManager = {}
+                        LeaderboardManager.__index = LeaderboardManager
+
+                        function LeaderboardManager.Setup(player)
+                                if not player then return nil end
+                                local folder = player:FindFirstChild("Leaderboard")
+                                if folder then return folder end
+                                folder = Instance.new("Folder")
+                                folder.Name = "Leaderboard"
+                                folder.Parent = player
+                                return folder
+                        end
+
+                        return LeaderboardManager
+                ]],
+                SecurityValidator = [[
+                        local SecurityValidator = {}
+                        SecurityValidator.__index = SecurityValidator
+
+                        function SecurityValidator.ValidatePlayer(player)
+                                return typeof(player) == "Instance" and player:IsA("Player")
+                        end
+
+                        function SecurityValidator.ValidateDistance(source, target, maxDistance)
+                                if not source or not target then return false end
+                                if not source:IsA("BasePart") or not target:IsA("BasePart") then return false end
+                                maxDistance = tonumber(maxDistance) or 50
+                                return (source.Position - target.Position).Magnitude <= maxDistance
+                        end
+
+                        function SecurityValidator.ValidateValue(value, minValue, maxValue)
+                                local numeric = tonumber(value)
+                                if numeric == nil then return false end
+                                if minValue ~= nil and numeric < minValue then return false end
+                                if maxValue ~= nil and numeric > maxValue then return false end
+                                return true
+                        end
+
+                        function SecurityValidator.ValidateRemote(remote)
+                                if typeof(remote) ~= "Instance" then return false end
+                                return remote:IsA("RemoteEvent") or remote:IsA("RemoteFunction")
+                        end
+
+                        return SecurityValidator
+                ]],
+        }
+
+        return templates[managerName] or [[
+                local GeneratedManager = {}
+                GeneratedManager.__index = GeneratedManager
+                return GeneratedManager
+        ]]
 end
 
-------------------------------------------------------------
--- [4] GAME CLASSIFIER
-------------------------------------------------------------
-function GameIntelligence.ClassifyGame(patterns)
-	local scores = {
-		Obby = #patterns.Checkpoints * 3 + #patterns.KillParts * 2,
-		Simulator = #patterns.Currencies.Coins * 2 + #patterns.Pets * 3 + #patterns.Collectibles * 2,
-		RPG = #patterns.NPCs * 2 + #patterns.Enemies * 2 + #patterns.Bosses * 4 + #patterns.Chests * 2,
-		Shooter = #patterns.Weapons * 3,
-		Tycoon = #patterns.Interactive.Buttons * 3 + #patterns.Interactive.Levers * 2,
-		Horror = #patterns.Traps * 3 + #patterns.Keys * 2,
-		Survival = #patterns.Enemies * 2 + #patterns.Weapons * 2,
-		Adventure = #patterns.Portals * 2 + #patterns.Chests * 2 + #patterns.NPCs * 1,
-		Fighting = #patterns.Weapons * 2 + #patterns.Enemies * 2 + #patterns.Bosses * 3,
-		Racing = #patterns.Vehicles.Cars * 4 + #patterns.Vehicles.Boats * 4 + #patterns.Vehicles.Planes * 4
-	}
-
-	local mainType = "Adventure"
-	local maxScore = -1
-
-	for gameType, score in pairs(scores) do
-		if score > maxScore then
-			maxScore = score
-			mainType = gameType
-		end
-	end
-
-	return mainType, scores
+local function getGameTypeLabel(gameTypes)
+        if type(gameTypes) ~= "table" then
+                return "Adventure"
+        end
+        if #gameTypes == 0 then
+                return "Adventure"
+        end
+        return table.concat(gameTypes, " + ")
 end
 
-------------------------------------------------------------
--- [5] SYSTEM DETECTOR
-------------------------------------------------------------
-function GameIntelligence.DetectSystems(patterns, service)
-	local systems = {
-		Inventory = #patterns.Weapons > 0 or #patterns.Keys > 0,
-		Economy = (#patterns.Currencies.Coins > 0 or #patterns.Currencies.Gems > 0 or #patterns.Shops > 0),
-		Combat = (#patterns.Weapons > 0 and (#patterns.Enemies > 0 or #patterns.Bosses > 0)),
-		Quests = #patterns.NPCs > 0,
-		Pets = #patterns.Pets > 0,
-		Trading = #patterns.Pets > 0 or #patterns.Currencies.Coins > 0,
-		Vehicles = (#patterns.Vehicles.Cars > 0 or #patterns.Vehicles.Boats > 0 or #patterns.Vehicles.Planes > 0),
-		Skills = #patterns.Enemies > 0 or #patterns.Bosses > 0,
-		Levels = #patterns.Checkpoints > 0 or #patterns.Enemies > 0,
-		XP = #patterns.Enemies > 0 or #patterns.Bosses > 0,
-		Teams = service.Teams and #service.Teams:GetTeams() > 0 or false,
-		Waves = #patterns.Enemies > 3,
-		RoundSystem = #patterns.Zones.Spawn > 1
-	}
+local function analyzeObjectSystem(obj)
+        if type(obj) ~= "table" and typeof(obj) ~= "Instance" then
+                return nil
+        end
+        local name = tostring(obj.Name or "")
+        local className = tostring(obj.ClassName or "")
+        local searchText = string.lower(name .. " " .. className)
+        local childrenText = ""
 
-	return systems
+        if typeof(obj) == "Instance" then
+                for _, child in ipairs(obj:GetChildren()) do
+                        if child:IsA("Script") or child:IsA("ModuleScript") or child:IsA("LocalScript") then
+                                childrenText = childrenText .. " " .. string.lower(child.Name)
+                        end
+                end
+        end
+
+        local patterns = {
+                {"npc", "enemy", "villager", "bot", "guard", "trainer"},
+                {"shop", "merchant", "vendor", "store", "market"},
+                {"door", "gate", "portal", "entry", "exit"},
+                {"tool", "weapon", "gun", "sword", "blade", "rifle"},
+                {"spawn", "respawn"},
+                {"vehicle", "car", "bike", "boat", "train", "racing"},
+                {"quest", "mission", "objective"},
+                {"inventory", "backpack", "bag", "items"},
+                {"currency", "coin", "cash", "money", "gem", "token"},
+                {"pet", "egg", "buddy"},
+                {"trade", "trading", "exchange"},
+                {"keyboard", "typing", "keypress", "input"},
+                {"collect", "collectible", "pickup", "orb"},
+                {"leaderboard", "scoreboard", "rank"},
+                {"team", "faction", "alliance"},
+                {"teleport", "tp", "warp"},
+                {"checkpoint", "spawnpoint"},
+                {"combat", "fight", "battle", "damage"},
+                {"round", "wave", "arena", "match"},
+                {"obby", "platform", "jump", "course"},
+                {"horror", "monster", "scare", "nightmare"},
+                {"survival", "craft", "resource", "health"},
+                {"rpg", "level", "stat", "class"},
+                {"roleplay", "dialogue", "rp"},
+                {"clicker", "click", "tap"},
+                {"mining", "ore", "rock", "mine"},
+                {"farming", "farm", "crop", "plant"},
+                {"simulator", "idle", "auto", "gain"},
+                {"tycoon", "upgrade", "build"},
+                {"interaction", "trigger", "button", "proximity", "click"},
+        }
+
+        for _, group in ipairs(patterns) do
+                local key = group[1]
+                for _, pattern in ipairs(group) do
+                        if pattern ~= key then
+                                if string.find(searchText, pattern, 1, true) or string.find(childrenText, pattern, 1, true) then
+                                        return key
+                                end
+                        end
+                end
+        end
+
+        return nil
 end
 
-------------------------------------------------------------
--- [6] RELATION ANALYZER
-------------------------------------------------------------
-function GameIntelligence.AnalyzeRelations(patterns)
-	local relations = {}
-
-	for _, door in ipairs(patterns.Doors) do
-		local prompt = door:FindFirstChildOfClass("ProximityPrompt")
-		if prompt then
-			table.insert(relations, {Type = "Door -> Prompt", Source = door, Target = prompt})
-		end
-	end
-
-	for _, npc in ipairs(patterns.NPCs) do
-		local weapon = npc:FindFirstChildOfClass("Tool")
-		if weapon then
-			table.insert(relations, {Type = "NPC -> Weapon", Source = npc, Target = weapon})
-		end
-	end
-
-	for _, vehicle in ipairs(patterns.Vehicles.Cars) do
-		local seat = vehicle:FindFirstChildOfClass("VehicleSeat") or vehicle:FindFirstChildOfClass("Seat")
-		if seat then
-			table.insert(relations, {Type = "Vehicle -> Seat", Source = vehicle, Target = seat})
-		end
-	end
-
-	return relations
+local function addUnique(list, value)
+        if type(list) ~= "table" then return end
+        for _, existing in ipairs(list) do
+                if existing == value then
+                        return
+                end
+        end
+        table.insert(list, value)
 end
 
-------------------------------------------------------------
--- [7] SCRIPT GENERATOR
-------------------------------------------------------------
-function GameIntelligence.GenerateScripts(gameType, systems)
-	local scripts = {}
+local ServerScriptGenerator = {}
+ServerScriptGenerator.__index = ServerScriptGenerator
 
-	-- Core Framework Module
-	scripts["Core"] = [[-- Game Intelligence Core Engine
-local Core = {}
-Core.GameType = "]] .. gameType .. [["
-function Core:Init()
-    print("[GI Core] Framework initialized for game mode: " .. self.GameType)
-end
-return Core]]
-
-	-- Spawn Manager
-	scripts["SpawnManager"] = [[-- Spawn Manager Module
-local SpawnManager = {}
-function SpawnManager:SpawnPlayer(player)
-    print("[GI Spawn] Spawning player: " .. player.Name)
-end
-return SpawnManager]]
-
-	-- NPC Manager
-	if systems.Quests or systems.Combat then
-		scripts["NPCManager"] = [[-- NPC Manager Module
-local NPCManager = {}
-function NPCManager:Interact(player, npc)
-    print("[GI NPC] " .. player.Name .. " interacted with " .. npc.Name)
-end
-return NPCManager]]
-	end
-
-	-- Door Manager
-	scripts["DoorManager"] = [[-- Door Manager Module
-local DoorManager = {}
-function DoorManager:OpenDoor(door)
-    print("[GI Door] Opening door: " .. door.Name)
-end
-return DoorManager]]
-
-	-- Economy Manager
-	if systems.Economy then
-		scripts["EconomyManager"] = [[-- Economy Manager Module
-local EconomyManager = {}
-EconomyManager.Balances = {}
-
-function EconomyManager:AddCurrency(player, currencyType, amount)
-    print("[GI Economy] Added " .. tostring(amount) .. " " .. currencyType .. " to " .. player.Name)
-end
-return EconomyManager]]
-	end
-
-	-- Combat Manager
-	if systems.Combat then
-		scripts["CombatManager"] = [[-- Combat Manager Module
-local CombatManager = {}
-function CombatManager:ApplyDamage(target, damage)
-    local humanoid = target:FindFirstChildOfClass("Humanoid")
-    if humanoid then
-        humanoid:TakeDamage(damage)
-    end
-end
-return CombatManager]]
-	end
-
-	-- Checkpoint Manager
-	if systems.Levels then
-		scripts["CheckpointManager"] = [[-- Checkpoint Manager Module
-local CheckpointManager = {}
-function CheckpointManager:SetStage(player, stageNum)
-    print("[GI Checkpoint] " .. player.Name .. " reached stage " .. tostring(stageNum))
-end
-return CheckpointManager]]
-	end
-
-	return scripts
+function ServerScriptGenerator.new()
+        local self = setmetatable({}, ServerScriptGenerator)
+        self.report = {
+                GameType = "Adventure",
+                SystemsDetected = {},
+                Systems = {},
+                ScriptsGenerated = {},
+                Warnings = {},
+                Errors = {},
+                GeneratedFolders = {},
+        }
+        return self
 end
 
-------------------------------------------------------------
--- [8] OPTIMIZER
-------------------------------------------------------------
-function GameIntelligence.Optimize(scripts)
-	local optimized = {}
+function ServerScriptGenerator:ScanGame()
+        local scan = {
+                Objects = {},
+                ByClass = {},
+                Hints = {},
+                Total = 0,
+        }
 
-	for name, code in pairs(scripts) do
-		-- Clear multiple empty spaces and format code
-		local cleanCode = string.gsub(code, "\n\n\n+", "\n\n")
-		optimized[name] = cleanCode
-	end
+        for _, descendant in ipairs(workspace:GetDescendants()) do
+                scan.Total += 1
+                local className = descendant.ClassName
+                scan.ByClass[className] = (scan.ByClass[className] or 0) + 1
+                table.insert(scan.Objects, descendant)
 
-	return optimized
+                local hint = analyzeObjectSystem(descendant)
+                if hint then
+                        scan.Hints[hint] = (scan.Hints[hint] or 0) + 1
+                end
+        end
+
+        return scan
 end
 
-------------------------------------------------------------
--- [9 & 10] BUILDER & EXPORTER (Integrat cu SaveInstance)
-------------------------------------------------------------
-function GameIntelligence.BuildAndExport(optimizedScripts, service, save_extra_func)
-	print("[GI Builder/Exporter] Se genereaza folderele si ModuleScripts in ServerScriptService...")
+function ServerScriptGenerator:Analyze(scan)
+        local systems = {}
+        local gameTypes = {}
 
-	if typeof(save_extra_func) == "function" then
-		-- Creare Folder principal GameIntelligence în ServerScriptService
-		save_extra_func("GameIntelligence", nil, "Folder", nil, service.ServerScriptService)
+        local function addSystem(name)
+                systems[name] = true
+        end
 
-		-- Salvarea fiecărui modul generat
-		for name, code in pairs(optimizedScripts) do
-			save_extra_func(name, nil, "ModuleScript", code, service.ServerScriptService)
-		end
-		print("✓ Game Intelligence System adaugat cu succes in fisierele salvate!")
-	else
-		warn("Funcția save_extra nu este disponibilă. Modulele nu au putut fi adăugate în salvare.")
-	end
+        local function addGameType(name)
+                if name and name ~= "" then
+                        addUnique(gameTypes, name)
+                end
+        end
+
+        if scan.ByClass.NPC or scan.Hints.npc then addSystem("NPCSystem") end
+        if scan.ByClass.Tool or scan.Hints.tool then addSystem("ToolSystem") end
+        if (scan.ByClass.Tool and scan.ByClass.Weapon) or scan.Hints.weapon then addSystem("WeaponSystem") end
+        if scan.ByClass.Door or scan.Hints.door then addSystem("DoorSystem") end
+        if scan.ByClass.Button or scan.ByClass.ClickDetector or scan.ByClass.ProximityPrompt or scan.Hints.interaction then addSystem("InteractionSystem") end
+        if scan.ByClass.SpawnLocation or scan.Hints.spawn then addSystem("SpawnSystem") end
+        if scan.ByClass.RemoteEvent or scan.ByClass.RemoteFunction or scan.Hints.remote then addSystem("RemoteSystem") end
+        if scan.ByClass.Model and scan.Hints.vehicle then addSystem("VehicleSystem") end
+        if scan.Hints.shop then addSystem("ShopSystem") end
+        if scan.Hints.quest then addSystem("QuestSystem") end
+        if scan.Hints.inventory then addSystem("InventorySystem") end
+        if scan.Hints.currency then addSystem("CurrencySystem") end
+        if scan.Hints.pet then addSystem("PetSystem") end
+        if scan.Hints.trade then addSystem("TradingSystem") end
+        if scan.Hints.keyboard or scan.Hints.typing then addSystem("KeyboardASMRSystem") end
+        if scan.Hints.collect then addSystem("CollectingSystem") end
+        if scan.Hints.leaderboard then addSystem("LeaderboardSystem") end
+        if scan.Hints.team then addSystem("TeamSystem") end
+        if scan.Hints.teleport then addSystem("TeleportSystem") end
+        if scan.Hints.checkpoint then addSystem("CheckpointSystem") end
+        if scan.Hints.combat or scan.Hints.fight then addSystem("CombatSystem") end
+        if scan.Hints.round then addSystem("RoundSystem") end
+        if scan.Hints.obby then addSystem("ObbySystem") end
+        if scan.Hints.horror then addSystem("HorrorSystem") end
+        if scan.Hints.survival then addSystem("SurvivalSystem") end
+        if scan.Hints.racing then addSystem("RacingSystem") end
+        if scan.Hints.rpg then addSystem("RPGSystem") end
+        if scan.Hints.roleplay then addSystem("RoleplaySystem") end
+        if scan.Hints.clicker then addSystem("ClickerSystem") end
+        if scan.Hints.mining then addSystem("MiningSystem") end
+        if scan.Hints.farming then addSystem("FarmingSystem") end
+        if scan.Hints.simulator then addSystem("SimulatorSystem") end
+        if scan.Hints.tycoon then addSystem("TycoonSystem") end
+
+        if systems.SimulatorSystem then addGameType("Simulator") end
+        if systems.PetSystem then addGameType("Pet") end
+        if systems.TradingSystem then addGameType("Trading") end
+        if systems.ObbySystem then addGameType("Obby") end
+        if systems.HorrorSystem then addGameType("Horror") end
+        if systems.SurvivalSystem then addGameType("Survival") end
+        if systems.RPGSystem then addGameType("RPG") end
+        if systems.CombatSystem then addGameType("Combat") end
+        if systems.RacingSystem then addGameType("Racing") end
+        if systems.RoleplaySystem then addGameType("Roleplay") end
+        if systems.KeyboardASMRSystem then addGameType("Keyboard ASMR") end
+        if systems.ClickerSystem then addGameType("Clicker") end
+        if systems.MiningSystem then addGameType("Mining") end
+        if systems.FarmingSystem then addGameType("Farming") end
+        if systems.PetSystem and systems.TradingSystem then addGameType("Pet + Trading") end
+        if #gameTypes == 0 then addGameType("Adventure") end
+
+        return { Systems = systems, GameTypes = gameTypes }
 end
 
-------------------------------------------------------------
--- EXECUTION PIPELINE
-------------------------------------------------------------
-function GameIntelligence.Run(save_extra_func)
-	print("==========================================================")
-	print("           GAME INTELLIGENCE GENERATOR - START            ")
-	print("==========================================================")
+function ServerScriptGenerator:BuildRoot()
+        local serverScriptService = game:GetService("ServerScriptService")
+        local generated = serverScriptService:FindFirstChild("Generated")
+        if not generated then
+                generated = Instance.new("Folder")
+                generated.Name = "Generated"
+                generated.Parent = serverScriptService
+        end
 
-	local containers, service = GameIntelligence.ScanCore()
-	local database = GameIntelligence.BuildDatabase(containers, service)
-	local patterns = GameIntelligence.DetectPatterns(database, service)
-	local gameType, scores = GameIntelligence.ClassifyGame(patterns)
-	local systems = GameIntelligence.DetectSystems(patterns, service)
-	local relations = GameIntelligence.AnalyzeRelations(patterns)
-	local scripts = GameIntelligence.GenerateScripts(gameType, systems)
-	local optimizedScripts = GameIntelligence.Optimize(scripts)
+        local managers = generated:FindFirstChild("Managers") or Instance.new("Folder")
+        managers.Name = "Managers"
+        managers.Parent = generated
 
-	GameIntelligence.BuildAndExport(optimizedScripts, service, save_extra_func)
+        local modules = generated:FindFirstChild("Modules") or Instance.new("Folder")
+        modules.Name = "Modules"
+        modules.Parent = generated
 
-	print("==========================================================")
-	print("           GAME INTELLIGENCE GENERATOR - COMPLETE         ")
-	print("==========================================================")
+        local configuration = generated:FindFirstChild("Configuration") or Instance.new("Folder")
+        configuration.Name = "Configuration"
+        configuration.Parent = generated
+
+        self.report.GeneratedFolders = {
+                Generated = generated,
+                Managers = managers,
+                Modules = modules,
+                Configuration = configuration,
+        }
+
+        return generated
 end
 
--- Rularea sistemului la salvare:
-if typeof(save_extra) == "function" then
-	GameIntelligence.Run(save_extra)
+function ServerScriptGenerator:GenerateManagers(analysis)
+        local managers = self.report.GeneratedFolders.Managers
+        if not managers then
+                self:BuildRoot()
+                managers = self.report.GeneratedFolders.Managers
+        end
+
+        local generationOrder = {
+                "GameManager",
+                "PlayerManager",
+                "InteractionManager",
+                "RemoteManager",
+                "DataManager",
+        }
+
+        local conditional = {
+                NPCSystem = { "NPCManager" },
+                DoorSystem = { "DoorManager" },
+                ToolSystem = { "ToolManager" },
+                CombatSystem = { "CombatManager" },
+                WeaponSystem = { "WeaponManager" },
+                ShopSystem = { "ShopManager" },
+                SpawnSystem = { "SpawnManager" },
+                VehicleSystem = { "VehicleManager" },
+                QuestSystem = { "QuestManager" },
+                InventorySystem = { "InventoryManager" },
+                CurrencySystem = { "CurrencyManager" },
+                CheckpointSystem = { "CheckpointManager" },
+                TeleportSystem = { "TeleportManager" },
+                TeamSystem = { "TeamManager" },
+                RoundSystem = { "RoundManager" },
+                PetSystem = { "PetManager" },
+                TradingSystem = { "TradingManager" },
+                KeyboardASMRSystem = { "KeyboardManager", "KeyPressManager", "KeyboardSoundManager", "KeyAnimationManager" },
+                CollectingSystem = { "CollectibleManager" },
+                LeaderboardSystem = { "LeaderboardManager" },
+        }
+
+        for _, managerName in ipairs(generationOrder) do
+                if not managers:FindFirstChild(managerName) then
+                        local script = Instance.new("Script")
+                        script.Name = managerName
+                        script.Source = buildManagerSource(managerName)
+                        script.Parent = managers
+                end
+                addUnique(self.report.ScriptsGenerated, managerName)
+        end
+
+        for systemName, names in pairs(conditional) do
+                if analysis.Systems[systemName] then
+                        for _, managerName in ipairs(names) do
+                                if not managers:FindFirstChild(managerName) then
+                                        local script = Instance.new("Script")
+                                        script.Name = managerName
+                                        script.Source = buildManagerSource(managerName)
+                                        script.Parent = managers
+                                end
+                                addUnique(self.report.ScriptsGenerated, managerName)
+                        end
+                end
+        end
+
+        return managers
 end
 
-return GameIntelligence
+function ServerScriptGenerator:ConfigureRemotes(analysis)
+        local repStorage = game:GetService("ReplicatedStorage")
+        local generatedFolder = repStorage:FindFirstChild("Generated") or Instance.new("Folder")
+        generatedFolder.Name = "Generated"
+        generatedFolder.Parent = repStorage
+
+        if analysis.Systems.RemoteSystem then
+                local event = generatedFolder:FindFirstChild("ServerNotify") or Instance.new("RemoteEvent")
+                event.Name = "ServerNotify"
+                event.Parent = generatedFolder
+
+                local functionRemote = generatedFolder:FindFirstChild("RequestData") or Instance.new("RemoteFunction")
+                functionRemote.Name = "RequestData"
+                functionRemote.Parent = generatedFolder
+        end
+
+        local validator = generatedFolder:FindFirstChild("RemoteValidator") or Instance.new("RemoteEvent")
+        validator.Name = "RemoteValidator"
+        validator.Parent = generatedFolder
+end
+
+function ServerScriptGenerator:ValidateGenerated()
+        local managerFolder = self.report.GeneratedFolders.Managers
+        if not managerFolder then
+                self:BuildRoot()
+                managerFolder = self.report.GeneratedFolders.Managers
+        end
+
+        for _, scriptName in ipairs(self.report.ScriptsGenerated) do
+                if not managerFolder:FindFirstChild(scriptName) then
+                        table.insert(self.report.Errors, "Missing generated script: " .. scriptName)
+                end
+        end
+
+        if #self.report.Errors == 0 then
+                table.insert(self.report.Warnings, "Validation passed")
+        end
+
+        return #self.report.Errors == 0
+end
+
+function ServerScriptGenerator:GenerateReport(analysis)
+        self.report.GameType = getGameTypeLabel(analysis.GameTypes)
+        self.report.Systems = analysis.Systems
+        self.report.SystemsDetected = {}
+        for systemName in pairs(analysis.Systems) do
+                table.insert(self.report.SystemsDetected, systemName)
+        end
+
+        if #self.report.SystemsDetected == 0 then
+                table.insert(self.report.SystemsDetected, "GeneralSystem")
+        end
+
+        if #self.report.ScriptsGenerated == 0 then
+                table.insert(self.report.ScriptsGenerated, "GameManager")
+        end
+
+        return self.report
+end
+
+function ServerScriptGenerator:Run()
+        local scan = self:ScanGame()
+        local analysis = self:Analyze(scan)
+
+        self:BuildRoot()
+        self:GenerateManagers(analysis)
+        self:ConfigureRemotes(analysis)
+        self:ValidateGenerated()
+        self:GenerateReport(analysis)
+
+        print("=== Server Script Generator Report ===")
+        print("Game Type:", self.report.GameType)
+        print("Systems Detected:")
+        for _, systemName in ipairs(self.report.SystemsDetected) do
+                print("✓ " .. systemName)
+        end
+        print("Scripts Generated:")
+        for _, scriptName in ipairs(self.report.ScriptsGenerated) do
+                print("✓ " .. scriptName)
+        end
+        if #self.report.Warnings > 0 then
+                print("Warnings:")
+                for _, warning in ipairs(self.report.Warnings) do
+                        print("! " .. warning)
+                end
+        end
+        if #self.report.Errors > 0 then
+                print("Errors:")
+                for _, error in ipairs(self.report.Errors) do
+                        print("ERROR: " .. error)
+                end
+        end
+
+        return self.report
+end
+
+if game and game.GetService then
+        local serverGenerator = ServerScriptGenerator.new()
+        task.spawn(function()
+                serverGenerator:Run()
+        end)
+end
+
