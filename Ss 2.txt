@@ -3133,10 +3133,8 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		savebuffer[savebuffer_size] = "</Item>"
 		savebuffer_size += 1
 	end
--- 
 
-	GameIntelligence.Run()
-local function save_game()
+	local function save_game()
 		do
 			if IsModel then
 				--[[ 
