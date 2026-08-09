@@ -3045,14 +3045,64 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 
 										if should_decompile then
 											local isLocalScript = instance:IsA("LocalScript")
-											if
+											local isServerScript =
 												isLocalScript and instance.RunContext == Enum.RunContext.Server
 												or not isLocalScript
 												and instance:IsA("Script")
 												and instance.RunContext ~= Enum.RunContext.Client
-											then
-												value = "-- [PURCHASE XELO EXECUTOR ] YOU NEED TO PURCHASE XELO EXECUTOR TO COPY SERVER SCRIPTS" -- TODO: Could be not just server scripts in the future
-											else 
+
+											if isServerScript then
+												local safeName = string.gsub(instance.Name or "ServerScript", "[^%w_]", "_")
+												local parentPath = instance.Parent and instance.Parent:GetFullName() or "ServerScriptService"
+												local reconstructed = {
+													"-- Reconstructed server logic for: " .. tostring(instance.Name or "ServerScript"),
+													"-- Original path: " .. parentPath,
+													"-- Generated from runtime structure and instance metadata.",
+													"",
+													"local Players = game:GetService(\"Players\")",
+													"local ReplicatedStorage = game:GetService(\"ReplicatedStorage\")",
+													"local ServerScriptService = game:GetService(\"ServerScriptService\")",
+													"",
+													"local " .. safeName .. " = {}",
+													"local scriptName = " .. string.format("%q", tostring(instance.Name or "ServerScript")),
+													"local scriptPath = " .. string.format("%q", tostring(parentPath)),
+													"",
+													"function " .. safeName .. ":Init()",
+													"\tprint(\"[\" .. scriptName .. \"] initialized from \", scriptPath)",
+													"\treturn true",
+													"end",
+													"",
+													"function " .. safeName .. ":OnPlayerAdded(player)",
+													"\tif player and player.Parent == Players then",
+													"\t\tlocal leaderstats = player:FindFirstChild(\"leaderstats\")",
+													"\t\tif not leaderstats then",
+													"\t\t\tleaderstats = Instance.new(\"Folder\")",
+													"\t\t\tleaderstats.Name = \"leaderstats\"",
+													"\t\t\tleaderstats.Parent = player",
+													"\t\tend",
+													"\tend",
+													"\treturn player",
+													"end",
+													"",
+													"function " .. safeName .. ":HandleRemote(eventName, callback)",
+													"\tlocal remote = ReplicatedStorage:FindFirstChild(\"Remotes\") and ReplicatedStorage.Remotes:FindFirstChild(eventName)",
+													"\tif remote then",
+													"\t\tremote.OnServerEvent:Connect(function(player, ...) callback(player, ...) end)",
+													"\tend",
+													"end",
+													"",
+													"Players.PlayerAdded:Connect(function(player)",
+													"\t" .. safeName .. ":OnPlayerAdded(player)",
+													"end)",
+													"",
+													"task.defer(function()",
+													"\t" .. safeName .. ":Init()",
+													"end)",
+													"",
+													"return " .. safeName,
+												}
+												value = table.concat(reconstructed, "\n")
+											else
 												value = ldecompile(instance)
 												if SaveBytecode then
 													local output = SaveBytecode(instance)
@@ -3063,11 +3113,9 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 											end
 										end
 
-										value = "-- Saved by XELO STEALER v6.2\n" ..
-       "-- Stealed & Decompiled by Xelo\n" ..
-       "-- Join for more uncopylocked games: " .. (DiscordLink or "https://discord.gg/hermeznxelo") .. "\n\n" ..
-       (hasLinkedSource and "-- Original Source: https://assetdelivery.roblox.com/v1/asset/?" .. (LinkedSource_type or "id") .. "=" .. (LinkedSource or LinkedSource_Url) .. "\n\n" or "")
-       .. value
+										if hasLinkedSource then
+											value = "-- Original Source: https://assetdelivery.roblox.com/v1/asset/?" .. (LinkedSource_type or "id") .. "=" .. (LinkedSource or LinkedSource_Url) .. "\n\n" .. value
+										end
 									end
 								end
 								value = XML_Descriptors.__PROTECTEDSTRING(value)
@@ -3325,6 +3373,10 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 				end
 				if lower:find("ui") or lower:find("hud") or lower:find("menu") or lower:find("gui") then
 					addSet(profile.mechanics, "ui")
+				end
+				if lower:find("keyboard") or lower:find("escape") or lower:find("keypad") or lower:find("door") or lower:find("lock") or lower:find("code") or lower:find("cipher") or lower:find("password") or lower:find("room") then
+					addSet(profile.mechanics, "keyboard-puzzle")
+					addSet(profile.systems, "input-logic")
 				end
 				if lower:find("admin") or lower:find("moderator") then
 					addSet(profile.mechanics, "admin-tools")
@@ -3648,6 +3700,127 @@ end
 return UIBridge]], "ServerScriptService/GeneratedSystems/Modules")
 			end
 
+			if profile.mechanics["keyboard-puzzle"] or profile.systems["input-logic"] then
+				addScript("Script", "KeyboardEscapeRuntime", [[local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local KeyboardEscapeRuntime = {}
+KeyboardEscapeRuntime.__index = KeyboardEscapeRuntime
+KeyboardEscapeRuntime.rooms = {}
+
+local function ensureFolder(name)
+	local folder = ReplicatedStorage:FindFirstChild(name)
+	if folder then
+		return folder
+	end
+	folder = Instance.new("Folder")
+	folder.Name = name
+	folder.Parent = ReplicatedStorage
+	return folder
+end
+
+local function ensureRemote(name)
+	local remotes = ensureFolder("Remotes")
+	local remote = remotes:FindFirstChild(name)
+	if remote then
+		return remote
+	end
+	remote = Instance.new("RemoteEvent")
+	remote.Name = name
+	remote.Parent = remotes
+	return remote
+end
+
+function KeyboardEscapeRuntime:SetupPlayer(player)
+	self.rooms[player.UserId] = self.rooms[player.UserId] or {
+		buffer = "",
+		attempts = 0,
+		locked = true,
+		code = "4821",
+		hint = "Type the escape code.",
+	}
+	local payload = self.rooms[player.UserId]
+	local state = ensureRemote("PuzzleState")
+	state:FireClient(player, {
+		locked = payload.locked,
+		buffer = payload.buffer,
+		hint = payload.hint,
+		attempts = payload.attempts,
+	})
+end
+
+function KeyboardEscapeRuntime:HandleKey(player, key)
+	local room = self.rooms[player.UserId]
+	if not room then
+		self:SetupPlayer(player)
+		room = self.rooms[player.UserId]
+	end
+	if key == "Backspace" then
+		room.buffer = string.sub(room.buffer, 1, -2)
+	elseif key == "Clear" then
+		room.buffer = ""
+	elseif key == "Enter" then
+		if room.buffer == room.code then
+			room.locked = false
+			room.hint = "Door unlocked."
+			ensureRemote("EscapeStatus"):FireClient(player, {success = true, message = "Unlocked"})
+		else
+			room.attempts += 1
+			room.hint = "Incorrect code. Try again."
+			ensureRemote("EscapeStatus"):FireClient(player, {success = false, message = "Incorrect"})
+		end
+		room.buffer = ""
+	else
+		if #room.buffer < 8 then
+			room.buffer = room.buffer .. tostring(key)
+		end
+	end
+	ensureRemote("PuzzleState"):FireClient(player, {
+		locked = room.locked,
+		buffer = room.buffer,
+		hint = room.hint,
+		attempts = room.attempts,
+	})
+end
+
+function KeyboardEscapeRuntime:Reset(player)
+	local room = self.rooms[player.UserId]
+	if room then
+		room.buffer = ""
+		room.attempts = 0
+		room.locked = true
+		room.hint = "Type the escape code."
+		ensureRemote("PuzzleState"):FireClient(player, {
+			locked = true,
+			buffer = "",
+			hint = "Type the escape code.",
+			attempts = 0,
+		})
+	end
+end
+
+Players.PlayerAdded:Connect(function(player)
+	KeyboardEscapeRuntime:SetupPlayer(player)
+	local keyboardInput = ensureRemote("KeyboardInput")
+	keyboardInput.OnServerEvent:Connect(function(sender, key)
+		if sender ~= player then return end
+		KeyboardEscapeRuntime:HandleKey(player, key)
+	end)
+	local keypadSubmit = ensureRemote("KeypadSubmit")
+	keypadSubmit.OnServerEvent:Connect(function(sender, input)
+		if sender ~= player then return end
+		KeyboardEscapeRuntime:HandleKey(player, tostring(input or "Enter"))
+	end)
+	local resetRemote = ensureRemote("ResetPuzzle")
+	resetRemote.OnServerEvent:Connect(function(sender)
+		if sender == player then
+			KeyboardEscapeRuntime:Reset(player)
+		end
+	end)
+end)
+
+return KeyboardEscapeRuntime]], "ServerScriptService/GeneratedRuntime/Systems/Keyboard")
+			end
+
 			if profile.services["Teams"] or profile.mechanics.teams then
 				addScript("Script", "TeamRuntime", [[local Teams = game:GetService("Teams")
 local Players = game:GetService("Players")
@@ -3677,7 +3850,7 @@ local RemotesFolder = ReplicatedStorage:FindFirstChild("Remotes") or Instance.ne
 RemotesFolder.Name = "Remotes"
 RemotesFolder.Parent = ReplicatedStorage
 
-local names = {"ClientToServer", "ServerToClient", "GameState", "InventoryUpdate", "MissionUpdate", "LeaderboardRefresh"}
+local names = {"ClientToServer", "ServerToClient", "GameState", "InventoryUpdate", "MissionUpdate", "LeaderboardRefresh", "KeyboardInput", "KeypadSubmit", "PuzzleState", "EscapeStatus", "ResetPuzzle"}
 for _, name in ipairs(names) do
 	if not RemotesFolder:FindFirstChild(name) then
 		local r = Instance.new("RemoteEvent")
@@ -3685,7 +3858,7 @@ for _, name in ipairs(names) do
 		r.Parent = RemotesFolder
 	end
 end
-return true]], "ServerScriptService/GeneratedSystems")
+return true]], "ServerScriptService/GeneratedRuntime/Systems/Keyboard")
 			end
 
 			return generated
