@@ -3171,510 +3171,325 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		end
 
 		----------------------------------------------------------------
-		-- GENERATOR: scan & analyze the WHOLE game, then create server
-		-- scripts for anything that has no code, based on the findings
+		-- SERVER SCRIPT GENERATOR (Scanner -> Analyzer -> Generator ->
+		-- Builder -> Export): detects NPC/Tool/Door/ClickDetector/
+		-- ProximityPrompt/SpawnLocation/RemoteEvent, classifies them
+		-- into systems, then builds manager modules + a bootstrap
 		----------------------------------------------------------------
 		local GeneratedServers = {}
 		if OPTIONS.ShowStatus and StatusText then
 			StatusText.Text = "Analyzer: scanning game..."
 		end
 		local generatorOk, generatorErr = pcall(function()
-			-- 1) STRUCTURE ANALYSIS (scan the WHOLE game)
-			local structureReport = {}
-			local structureBudget = 4000
-			for _, svc in ipairs(game:GetChildren()) do
-				local entries = {}
-				local function walk(inst, depth)
-					if structureBudget <= 0 then
-						return
+			----------------------------------------------------------------
+			-- 1) SCANNER: detect objects across the WHOLE game
+			----------------------------------------------------------------
+			local detected = {
+				npc = {},
+				tool = {},
+				door = {},
+				clickDetector = {},
+				proximityPrompt = {},
+				spawnLocation = {},
+				remote = {},
+			}
+			local seenModels = {}
+			local function isPlayerCharacter(model)
+				local p = model.Parent
+				while p do
+					if p == service.Players then
+						return true
 					end
-					for _, child in ipairs(inst:GetChildren()) do
-						structureBudget -= 1
-						if structureBudget < 0 then
-							return
-						end
-						local e = { name = child.Name, class = child.ClassName, depth = depth }
-						table.insert(entries, e)
-						if #child:GetChildren() > 0 then
-							walk(child, depth + 1)
-						end
-					end
+					p = p.Parent
 				end
-				walk(svc, 0)
-				structureReport[svc.Name] = entries
-			end
-
-			-- 2) REMOTE + SCRIPT ANALYSIS (one scan of the WHOLE game)
-			local allDescendants = game:GetDescendants()
-			local remotesFound = {}
-			local remoteByName = {}
-			local remoteNameList = {}
-			for _, d in ipairs(allDescendants) do
-				if d:IsA("RemoteEvent") or d:IsA("RemoteFunction") or d:IsA("UnreliableRemoteEvent") then
-					local entry = remoteByName[d.Name]
-					if not entry then
-						entry = {
-							name = d.Name,
-							class = d.ClassName,
-							paths = {},
-							clients = {},
-							uses = {},
-							isFunction = d:IsA("RemoteFunction"),
-						}
-						remoteByName[d.Name] = entry
-						table.insert(remotesFound, entry)
-					end
-					table.insert(entry.paths, d:GetFullName())
-				end
-			end
-			for name in pairs(remoteByName) do
-				table.insert(remoteNameList, name)
-			end
-
-			-- 3) SCRIPT ANALYSIS (scan the WHOLE game)
-			local allScripts = {}
-			local noCodeScripts = {}
-
-			local decompileBudget = 120
-			local function tryDecompile(script)
-				local source = script.Source
-				if source and #source > 0 then
-					return source
-				end
-				if not ldecompile or decompileBudget <= 0 then
-					return ""
-				end
-				decompileBudget -= 1
-				local ok, result = pcall(ldecompile, script)
-				return ok and result or ""
-			end
-
-			local function isNoCodeSource(source)
-				if not source or source == "" then
-					return true
-				end
-				if string_find(source, "Decompiling is disabled") then return true end
-				if string_find(source, "Your Executor does NOT have a Decompiler") then return true end
-				if string_find(source, "Failed to decompile") then return true end
-				if string_find(source, "Empty Output") then return true end
-				if string_find(source, "PURCHASE XELO EXECUTOR") then return true end
-				if string_find(source, "Decompiler timed out") then return true end
-				if string_find(source, "The Script is Empty") then return true end
-				if string_find(source, "Not found in already decompiled ScriptCache") then return true end
 				return false
 			end
-
-			local function isServerSideScript(s)
-				if s:IsA("LocalScript") then
-					local ok, rc = pcall(function()
-						return s.RunContext == Enum.RunContext.Server
-					end)
-					return ok and rc
-				end
-				if s:IsA("Script") then
-					local ok, isClient = pcall(function()
-						return s.RunContext == Enum.RunContext.Client
-					end)
-					if ok and isClient then
-						return false
-					end
-					return true
-				end
-				local path = s:GetFullName()
-				if string_find(path, "StarterGui") or string_find(path, "StarterPlayer") or string_find(path, "StarterPack") or string_find(path, "ReplicatedFirst") then
-					return false
-				end
-				return true
+			local function addDetect(list, inst)
+				table.insert(list, { name = inst.Name, class = inst.ClassName, path = inst:GetFullName() })
 			end
-
-			for _, s in ipairs(allDescendants) do
-				if s:IsA("LuaSourceContainer") then
-					local entry = {
-						name = s.Name,
-						class = s.ClassName,
-						path = s:GetFullName(),
-						server = isServerSideScript(s),
-					}
-					local source = tryDecompile(s)
-					entry.source = source
-					if isNoCodeSource(source) then
-						table.insert(noCodeScripts, entry)
+			for _, inst in ipairs(game:GetDescendants()) do
+				if inst:IsA("RemoteEvent") or inst:IsA("RemoteFunction") or inst:IsA("UnreliableRemoteEvent") then
+					addDetect(detected.remote, inst)
+				elseif inst:IsA("SpawnLocation") then
+					addDetect(detected.spawnLocation, inst)
+				elseif inst:IsA("ClickDetector") then
+					addDetect(detected.clickDetector, inst)
+				elseif inst:IsA("ProximityPrompt") then
+					addDetect(detected.proximityPrompt, inst)
+				elseif inst:IsA("Tool") then
+					addDetect(detected.tool, inst)
+				elseif not seenModels[inst] and inst:IsA("Model") and inst:FindFirstChildOfClass("Humanoid") then
+					if not isPlayerCharacter(inst) then
+						seenModels[inst] = true
+						addDetect(detected.npc, inst)
 					end
-					table.insert(allScripts, entry)
-				end
-			end
-
-			local function analyzeClientScript(source)
-				local hits = {}
-				if not source or source == "" then
-					return hits
-				end
-				for line in string.gmatch(source, "[^\r\n]+") do
-					local isFunction = string_find(line, "InvokeServer")
-					local isEvent = string_find(line, "FireServer")
-					if isEvent or isFunction then
-						for _, name in ipairs(remoteNameList) do
-							if string_find(line, name) then
-								local hit = hits[name]
-								if not hit then
-									hit = {
-										method = isFunction and "InvokeServer" or "FireServer",
-										sample = string.gsub(line, "%s+", " "),
-										count = 0,
-									}
-									hits[name] = hit
-								end
-								hit.count += 1
-							end
-						end
-					end
-				end
-				return hits
-			end
-
-			for _, script in ipairs(allScripts) do
-				if not script.server then
-					local hits = analyzeClientScript(script.source)
-					for name, hit in pairs(hits) do
-						local entry = remoteByName[name]
-						if entry then
-							table.insert(entry.clients, {
-								name = script.name,
-								path = script.path,
-								method = hit.method,
-								sample = hit.sample,
-							})
-							entry.uses[hit.method] = (entry.uses[hit.method] or 0) + hit.count
-						end
+				elseif not seenModels[inst] and (inst:IsA("BasePart") or inst:IsA("Model")) then
+					local nm = string.lower(inst.Name)
+					if string_find(nm, "door") or inst:FindFirstChildOfClass("HingeConstraint") then
+						seenModels[inst] = true
+						addDetect(detected.door, inst)
 					end
 				end
 			end
 
-			-- 4) GENERATE SERVER SCRIPTS
-			local function BuildHandlerSource()
+			----------------------------------------------------------------
+			-- 2) ANALYZER: classify detected objects into systems
+			----------------------------------------------------------------
+			local systems = {
+				npc = detected.npc,
+				door = detected.door,
+				tool = detected.tool,
+				spawn = detected.spawnLocation,
+				interaction = {},
+				shop = {},
+				combat = {},
+			}
+			for _, d in ipairs(detected.clickDetector) do
+				table.insert(systems.interaction, { kind = "ClickDetector", name = d.name, class = d.class, path = d.path })
+			end
+			for _, d in ipairs(detected.proximityPrompt) do
+				table.insert(systems.interaction, { kind = "ProximityPrompt", name = d.name, class = d.class, path = d.path })
+			end
+			for _, t in ipairs(detected.tool) do
+				local nm = string.lower(t.name)
+				if string_find(nm, "shop") or string_find(nm, "buy") or string_find(nm, "price") or string_find(nm, "sell") or string_find(nm, "store") then
+					table.insert(systems.shop, t)
+				end
+				if string_find(nm, "sword") or string_find(nm, "weapon") or string_find(nm, "gun") or string_find(nm, "knife") or string_find(nm, "blade") or string_find(nm, "damage") then
+					table.insert(systems.combat, t)
+				end
+			end
+
+			----------------------------------------------------------------
+			-- 3) GENERATOR: build manager modules from the systems
+			----------------------------------------------------------------
+			local function buildManager(managerName, items, methodsLua)
 				local L = {}
 				table.insert(L, "--[[")
-				table.insert(L, "  GENERATED SERVER HANDLER")
-				table.insert(L, "  Auto-created by the Game Analyzer: it scans the WHOLE game,")
-				table.insert(L, "  client scripts and remotes, then builds server-side handling")
-				table.insert(L, "  for every remote it found.")
+				table.insert(L, "  GENERATED MANAGER: " .. managerName)
+				table.insert(L, "  Auto-created by the Server Script Generator.")
 				table.insert(L, "]]")
-				table.insert(L, "local Players = game:GetService(\"Players\")")
-				table.insert(L, "local RunService = game:GetService(\"RunService\")")
+				table.insert(L, "local " .. managerName .. " = {}")
 				table.insert(L, "")
-				table.insert(L, "local ServerHandler = {}")
-				table.insert(L, "")
-				table.insert(L, "local function findRemote(name)")
-				table.insert(L, "\tfor _, p in ipairs(game:GetDescendants()) do")
-				table.insert(L, "\t\tif p.Name == name and (p:IsA(\"RemoteEvent\") or p:IsA(\"RemoteFunction\") or p:IsA(\"UnreliableRemoteEvent\")) then")
-				table.insert(L, "\t\t\treturn p")
-				table.insert(L, "\t\tend")
-				table.insert(L, "\tend")
-				table.insert(L, "\treturn nil")
-				table.insert(L, "end")
-				table.insert(L, "")
-				table.insert(L, "local handlers = {}")
-				table.insert(L, "")
-
-				for _, entry in ipairs(remotesFound) do
-					local kind = entry.isFunction and "RemoteFunction" or entry.class
-					table.insert(L, "-- " .. entry.name .. " (" .. kind .. ") used by " .. #entry.clients .. " client script(s)")
-					table.insert(L, "do")
-					table.insert(L, "\tlocal remote = findRemote(\"" .. entry.name .. "\")")
-					table.insert(L, "\tif remote then")
-					if entry.isFunction then
-						table.insert(L, "\t\thandlers[\"" .. entry.name .. "\"] = remote.OnServerInvoke:Connect(function(player, ...)")
-						table.insert(L, "\t\t\t-- generated handler for: " .. entry.name)
-						table.insert(L, "\t\t\treturn nil")
-						table.insert(L, "\t\tend)")
-					else
-						table.insert(L, "\t\thandlers[\"" .. entry.name .. "\"] = remote.OnServerEvent:Connect(function(player, ...)")
-						table.insert(L, "\t\t\t-- generated handler for: " .. entry.name)
-						table.insert(L, "\t\t\t-- sample client usage: " .. tostring(entry.clients[1] and entry.clients[1].sample or "n/a"))
-						table.insert(L, "\t\tend)")
+				table.insert(L, managerName .. ".items = {")
+				for _, item in ipairs(items) do
+					local fields = { 'name = "' .. item.name .. '"', 'path = "' .. item.path .. '"' }
+					if item.class then
+						table.insert(fields, 'class = "' .. item.class .. '"')
 					end
-					table.insert(L, "\tend")
-					table.insert(L, "end")
-					table.insert(L, "")
+					if item.kind then
+						table.insert(fields, 'kind = "' .. item.kind .. '"')
+					end
+					table.insert(L, "\t{ " .. table.concat(fields, ", ") .. " },")
 				end
-
-				table.insert(L, "return ServerHandler")
+				table.insert(L, "}")
+				table.insert(L, "")
+				table.insert(L, methodsLua)
+				table.insert(L, "")
+				table.insert(L, "return " .. managerName)
 				return table.concat(L, "\n")
 			end
 
-			local function generateScriptBody(script)
-				local n = string.lower(script.name or "")
-				local template
-				if string_find(n, "shop") or string_find(n, "store") or string_find(n, "market") then
-					template = [=[
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Players = game:GetService("Players")
-local ShopSystem = {}
-local stock = {}
-function ShopSystem:Purchase(player, itemId, quantity)
-	-- generated stub: implement real purchase logic here
-	return false, "stub"
-end
-return ShopSystem]=]
-				elseif string_find(n, "data") or string_find(n, "save") or string_find(n, "load") or string_find(n, "profile") or string_find(n, "database") then
-					template = [=[
-local DSS = game:GetService("DataStoreService")
-local Players = game:GetService("Players")
-local DataManager = {}
-local store = DSS:GetDataStore("GeneratedData")
-function DataManager:Load(player)
-	-- generated stub: load data for player
-	return {}
-end
-function DataManager:Save(player)
-	-- generated stub: save data for player
-end
-Players.PlayerRemoving:Connect(function(p) DataManager:Save(p) end)
-return DataManager]=]
-				elseif string_find(n, "leader") or string_find(n, "rank") then
-					template = [=[
-local Players = game:GetService("Players")
-local Leaderboard = {}
-function Leaderboard:Setup(player)
-	local ls = Instance.new("Folder")
-	ls.Name = "leaderstats"
-	ls.Parent = player
-end
-Players.PlayerAdded:Connect(function(p) Leaderboard:Setup(p) end)
-return Leaderboard]=]
-				elseif string_find(n, "combat") or string_find(n, "damage") or string_find(n, "health") or string_find(n, "fight") or string_find(n, "enemy") or string_find(n, "mob") or string_find(n, "boss") then
-					template = [=[
-local Players = game:GetService("Players")
-local Combat = {}
-local cooldowns = {}
-function Combat:Damage(player, target, amount)
-	-- generated stub: apply damage to target
-end
-return Combat]=]
-				elseif string_find(n, "spawn") or string_find(n, "respawn") then
-					template = [=[
-local Players = game:GetService("Players")
-local SpawnSystem = {}
-local points = {}
-function SpawnSystem:Register(part)
-	table.insert(points, part)
-end
-function SpawnSystem:Spawn(player)
-	-- generated stub: place player at a spawn point
-end
-return SpawnSystem]=]
-				elseif string_find(n, "inventory") or string_find(n, "item") or string_find(n, "weapon") or string_find(n, "tool") or string_find(n, "equip") then
-					template = [=[
-local Inventory = {}
-local items = {}
-function Inventory:Give(player, itemName, quantity)
-	-- generated stub: give item to player
-end
-function Inventory:Take(player, itemName, quantity)
-	-- generated stub: remove item from player
-end
-return Inventory]=]
-				elseif string_find(n, "economy") or string_find(n, "currency") or string_find(n, "coin") or string_find(n, "money") or string_find(n, "balance") or string_find(n, "bank") then
-					template = [=[
-local Economy = {}
-local balances = {}
-function Economy:Add(player, amount)
-	-- generated stub: add currency
-end
-function Economy:Spend(player, amount)
-	-- generated stub: spend currency
-end
-return Economy]=]
-				elseif string_find(n, "quest") or string_find(n, "mission") then
-					template = [=[
-local QuestSystem = {}
-local progress = {}
-function QuestSystem:Start(player, questId)
-	-- generated stub: start a quest
-end
-function QuestSystem:Update(player, questId, amount)
-	-- generated stub: update quest progress
-end
-return QuestSystem]=]
-				elseif string_find(n, "team") or string_find(n, "guild") or string_find(n, "clan") or string_find(n, "party") then
-					template = [=[
-local TeamManager = {}
-local teams = {}
-function TeamManager:Assign(player, teamName)
-	-- generated stub: assign player to team
-end
-function TeamManager:Get(player)
-	return teams[player.UserId]
-end
-return TeamManager]=]
-				elseif string_find(n, "trade") then
-					template = [=[
-local Trading = {}
-local trades = {}
-function Trading:Request(a, b)
-	-- generated stub: request a trade
-end
-function Trading:Confirm(tradeId, player)
-	-- generated stub: confirm trade
-end
-return Trading]=]
-				elseif string_find(n, "admin") or string_find(n, "command") or string_find(n, "mod") or string_find(n, "ban") or string_find(n, "kick") then
-					template = [=[
-local Players = game:GetService("Players")
-local AdminCommands = {}
-local prefix = "!"
-function AdminCommands:Process(player, message)
-	-- generated stub: parse and run admin commands
-end
-Players.PlayerAdded:Connect(function(p)
-	p.Chatted:Connect(function(m) AdminCommands:Process(p, m) end)
-end)
-return AdminCommands]=]
-				elseif string_find(n, "weather") or string_find(n, "day") or string_find(n, "night") or string_find(n, "cycle") then
-					template = [=[
-local Lighting = game:GetService("Lighting")
-local DayNight = {}
-DayNight.speed = 60
-DayNight.time = 0.3
-function DayNight:Start()
-	task.spawn(function()
-		while true do
-			DayNight.time = (DayNight.time + 1/86400 * DayNight.speed) % 1
-			Lighting.ClockTime = DayNight.time * 24
-			task.wait(1/30)
+			local npcMethods = [=[
+function NPCManager:Find(name)
+	for _, item in ipairs(self.items) do
+		if item.name == name then
+			return game:FindFirstChild(item.path, true)
 		end
-	end)
+	end
+	return nil
 end
-DayNight:Start()
-return DayNight]=]
-				elseif string_find(n, "notification") or string_find(n, "message") or string_find(n, "chat") or string_find(n, "mail") then
-					template = [=[
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+function NPCManager:GetHumanoid(npc)
+	local model = type(npc) == "string" and self:Find(npc) or npc
+	if not model then
+		return nil
+	end
+	return model:FindFirstChildOfClass("Humanoid")
+end
+
+function NPCManager:Talk(npc, player, message)
+	local humanoid = self:GetHumanoid(npc)
+	if humanoid then
+		humanoid:SetStateEnabled(Enum.HumanoidStateType.Physics, true)
+	end
+	print(("[NPCManager] %s says to %s: %s"):format(tostring(npc), tostring(player), tostring(message)))
+end
+
+function NPCManager:SetSpeed(npc, speed)
+	local humanoid = self:GetHumanoid(npc)
+	if humanoid then
+		humanoid.WalkSpeed = speed
+	end
+end]=]
+
+			local doorMethods = [=[
+function DoorManager:GetDoor(name)
+	for _, item in ipairs(self.items) do
+		if item.name == name then
+			return game:FindFirstChild(item.path, true)
+		end
+	end
+	return nil
+end
+
+function DoorManager:SetOpen(door, open)
+	door = type(door) == "string" and self:GetDoor(door) or door
+	if not door then
+		return false
+	end
+	local hinge = door:FindFirstChildOfClass("HingeConstraint")
+	if hinge then
+		hinge.ActuatorType = Enum.ActuatorType.Servo
+		hinge.TargetAngle = open and 90 or 0
+		door:SetAttribute("Open", open)
+		return true
+	end
+	local part = door:IsA("BasePart") and door or door.PrimaryPart
+	if part then
+		part:SetAttribute("Open", open)
+	end
+	return true
+end
+
+function DoorManager:Toggle(door)
+	door = type(door) == "string" and self:GetDoor(door) or door
+	if not door then
+		return false
+	end
+	local open = door:GetAttribute("Open")
+	self:SetOpen(door, not open)
+	return not open
+end]=]
+
+			local toolMethods = [=[
+function ToolManager:GetTool(name)
+	for _, item in ipairs(self.items) do
+		if item.name == name then
+			return game:FindFirstChild(item.path, true)
+		end
+	end
+	return nil
+end
+
+function ToolManager:Give(player, tool)
+	tool = type(tool) == "string" and self:GetTool(tool) or tool
+	if not tool or not tool:IsA("Tool") then
+		return false
+	end
+	local backpack = player:FindFirstChildOfClass("Backpack")
+	local clone = tool:Clone()
+	clone.Parent = backpack or player
+	return true
+end
+
+function ToolManager:Take(player, toolName)
+	local backpack = player:FindFirstChildOfClass("Backpack")
+	if not backpack then
+		return false
+	end
+	local found = backpack:FindFirstChild(toolName)
+	if found then
+		found:Destroy()
+		return true
+	end
+	return false
+end]=]
+
+			local spawnMethods = [=[
+function SpawnManager:FindSpawn(name)
+	for _, item in ipairs(self.items) do
+		if item.name == name then
+			return game:FindFirstChild(item.path, true)
+		end
+	end
+	return nil
+end
+
+function SpawnManager:RandomSpawn()
+	local list = self.items
+	if #list == 0 then
+		return nil
+	end
+	return game:FindFirstChild(list[math.random(1, #list)].path, true)
+end
+
+function SpawnManager:Teleport(player, spawn)
+	if not player.Character then
+		return false
+	end
+	local target = spawn and (type(spawn) == "string" and self:FindSpawn(spawn) or spawn) or self:RandomSpawn()
+	if not target then
+		return false
+	end
+	local position = target:IsA("SpawnLocation") and target.Position or target:GetPivot().Position
+	player.Character:MoveTo(position + Vector3.new(0, 3, 0))
+	return true
+end]=]
+
+			local interactionMethods = [=[
+function InteractionManager:FindInteraction(name)
+	for _, item in ipairs(self.items) do
+		if item.name == name then
+			return game:FindFirstChild(item.path, true)
+		end
+	end
+	return nil
+end
+
+function InteractionManager:Handle(player, object, kind)
+	print(("[InteractionManager] %s interacted with %s (%s)"):format(tostring(player), tostring(object and object.Name), tostring(kind)))
+end
+
+function InteractionManager:WireAll()
+	for _, item in ipairs(self.items) do
+		local object = game:FindFirstChild(item.path, true)
+		if object and object:IsA("ClickDetector") then
+			object.MouseClick:Connect(function(player)
+				self:Handle(player, object, "ClickDetector")
+			end)
+		elseif object and object:IsA("ProximityPrompt") then
+			object.Triggered:Connect(function(player)
+				self:Handle(player, object, "ProximityPrompt")
+			end)
+		end
+	end
+end]=]
+
+			local bootstrapSource = [=[
+--[[
+  GENERATED BOOTSTRAP
+  Auto-created by the Server Script Generator.
+  Requires the generated managers and wires the detected interactions.
+]]
 local Players = game:GetService("Players")
-local Notifier = {}
-function Notifier:Send(player, title, text)
-	-- generated stub: send notification to player
-end
-return Notifier]=]
-				elseif string_find(n, "anti") or string_find(n, "cheat") then
-					template = [=[
-local Players = game:GetService("Players")
-local AntiCheat = {}
-local flagged = {}
-function AntiCheat:Flag(player, reason)
-	-- generated stub: flag suspicious player
-end
-Players.PlayerAdded:Connect(function(p)
-	p.CharacterAdded:Connect(function(char)
-		task.wait(1)
-		-- generated stub: basic checks (speed, fly, etc.)
-	end)
+
+local NPCManager = require(script.Parent.NPCManager)
+local DoorManager = require(script.Parent.DoorManager)
+local ToolManager = require(script.Parent.ToolManager)
+local SpawnManager = require(script.Parent.SpawnManager)
+local InteractionManager = require(script.Parent.InteractionManager)
+
+InteractionManager:WireAll()
+
+Players.PlayerAdded:Connect(function(player)
+	SpawnManager:Teleport(player)
 end)
-return AntiCheat]=]
-				elseif string_find(n, "tutorial") or string_find(n, "guide") then
-					template = [=[
-local Tutorial = {}
-local progress = {}
-function Tutorial:Start(player)
-	-- generated stub: start the tutorial
-end
-function Tutorial:Advance(player)
-	-- generated stub: advance to next step
-end
-return Tutorial]=]
-				elseif string_find(n, "match") or string_find(n, "queue") or string_find(n, "lobby") or string_find(n, "game") then
-					template = [=[
-local GameManager = {}
-local running = false
-function GameManager:Init()
-	running = true
-	-- generated stub: initialize the game loop
-end
-function GameManager:Stop()
-	running = false
-end
-return GameManager]=]
-				else
-					template = "-- generated stub for " .. script.name .. " (" .. script.class .. ")\n" .. [=[
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Players = game:GetService("Players")
-local Module = {}
-function Module:Init()
-	-- generated stub: implement the real logic here
-end
-function Module:Destroy()
-	-- generated stub: cleanup
-end
-return Module]=]
-				end
-				return "--[[\n  GENERATED SERVER SCRIPT\n  Original: " .. script.path .. " (" .. script.class .. ")\n  Original had no readable code, so a server-side stub was generated.\n]]\n\n" .. template
-			end
 
-			local function BuildConfigSource()
-				local L = {}
-				table.insert(L, "--[[")
-				table.insert(L, "  GENERATED SERVER CONFIG")
-				table.insert(L, "  Auto-created by the Game Analyzer. Contains the scanned game")
-				table.insert(L, "  structure, remote list, and every script that had no code.")
-				table.insert(L, "]]")
-				table.insert(L, "local GeneratedServerConfig = {}")
-				table.insert(L, "")
-				table.insert(L, "GeneratedServerConfig.PlaceId = " .. tostring(game.PlaceId))
-				table.insert(L, "GeneratedServerConfig.PlaceVersion = " .. tostring(game.PlaceVersion))
-				table.insert(L, "GeneratedServerConfig.GeneratedAt = os.time()")
-				table.insert(L, "")
-				table.insert(L, "GeneratedServerConfig.Remotes = {")
-				for _, entry in ipairs(remotesFound) do
-					local clientList = {}
-					for _, c in ipairs(entry.clients) do
-						table.insert(clientList, "\t\t\t{ name = \"" .. c.name .. "\", path = \"" .. c.path .. "\", method = \"" .. c.method .. "\" }")
-					end
-					table.insert(L, "\t{")
-					table.insert(L, "\t\tname = \"" .. entry.name .. "\",")
-					table.insert(L, "\t\tclass = \"" .. entry.class .. "\",")
-					table.insert(L, "\t\tpaths = { \"" .. table.concat(entry.paths, "\", \"") .. "\" },")
-					table.insert(L, "\t\tuses = { FireServer = " .. tostring(entry.uses.FireServer or 0) .. ", InvokeServer = " .. tostring(entry.uses.InvokeServer or 0) .. " },")
-					table.insert(L, "\t\tclients = {")
-					table.insert(L, table.concat(clientList, ",\n"))
-					table.insert(L, "\t\t},")
-					table.insert(L, "\t},")
-				end
-				table.insert(L, "}")
-				table.insert(L, "")
-				table.insert(L, "GeneratedServerConfig.NoCodeScripts = {")
-				for _, entry in ipairs(noCodeScripts) do
-					table.insert(L, "\t{ name = \"" .. entry.name .. "\", class = \"" .. entry.class .. "\", path = \"" .. entry.path .. "\", server = " .. tostring(entry.server) .. " },")
-				end
-				table.insert(L, "}")
-				table.insert(L, "")
-				table.insert(L, "GeneratedServerConfig.Scripts = {")
-				for _, entry in ipairs(allScripts) do
-					table.insert(L, "\t{ name = \"" .. entry.name .. "\", class = \"" .. entry.class .. "\", path = \"" .. entry.path .. "\", server = " .. tostring(entry.server) .. " },")
-				end
-				table.insert(L, "}")
-				table.insert(L, "")
-				table.insert(L, "GeneratedServerConfig.Structure = {")
-				for svcName, entries in pairs(structureReport) do
-					local parts = {}
-					for _, e in ipairs(entries) do
-						table.insert(parts, string.rep("  ", e.depth + 1) .. "-- " .. e.class .. ": " .. e.name)
-					end
-					table.insert(L, "\t" .. svcName .. " = {\n" .. table.concat(parts, "\n") .. "\n\t},")
-				end
-				table.insert(L, "}")
-				table.insert(L, "")
-				table.insert(L, "return GeneratedServerConfig")
-				return table.concat(L, "\n")
-			end
+return {
+	NPCManager = NPCManager,
+	DoorManager = DoorManager,
+	ToolManager = ToolManager,
+	SpawnManager = SpawnManager,
+	InteractionManager = InteractionManager,
+}
+]=]
 
-			local handlerSource = BuildHandlerSource()
-			local configSource = BuildConfigSource()
-
-			-- create a generated server script for every script that has no code
-			local generatedStubs = {}
-			local usedNames = {}
+			----------------------------------------------------------------
+			-- 4) BUILDER: create the generated server systems
+			----------------------------------------------------------------
 			local genFolder = Instance.new("Folder")
-			genFolder.Name = "GeneratedServerScripts"
+			genFolder.Name = "GeneratedServerSystems"
 			genFolder.Archivable = true
 			if not pcall(function() genFolder.Parent = service.ServerScriptService end) then
 				pcall(function() genFolder.Parent = service.ServerStorage end)
@@ -3684,27 +3499,18 @@ return Module]=]
 			end
 			table.insert(_fakeAll, genFolder)
 
-			for _, script in ipairs(noCodeScripts) do
-				local genName = script.name
-				if usedNames[genName] then
-					local i = 2
-					while usedNames[genName .. "_" .. i] do
-						i += 1
-					end
-					genName = genName .. "_" .. i
-				end
-				usedNames[genName] = true
-				local source = generateScriptBody(script)
-				_addFake("Script", genName, source, genFolder)
-				table.insert(generatedStubs, { name = genName, class = script.class, path = script.path })
-			end
+			_addFake("ModuleScript", "NPCManager", buildManager("NPCManager", systems.npc, npcMethods), genFolder)
+			_addFake("ModuleScript", "DoorManager", buildManager("DoorManager", systems.door, doorMethods), genFolder)
+			_addFake("ModuleScript", "ToolManager", buildManager("ToolManager", systems.tool, toolMethods), genFolder)
+			_addFake("ModuleScript", "SpawnManager", buildManager("SpawnManager", systems.spawn, spawnMethods), genFolder)
+			_addFake("ModuleScript", "InteractionManager", buildManager("InteractionManager", systems.interaction, interactionMethods), genFolder)
+			_addFake("Script", "GeneratedBootstrap", bootstrapSource, genFolder)
 
-			_addFake("Script", "GeneratedServerHandler", handlerSource, service.ServerScriptService)
-			_addFake("ModuleScript", "GeneratedServerConfig", configSource, service.ServerStorage)
-
-			GeneratedServers = { handler = handlerSource, config = configSource, stubs = generatedStubs }
+			----------------------------------------------------------------
+			-- 5) EXPORT: fake instances are parented -> embedded in the save
+			----------------------------------------------------------------
 			if OPTIONS.ShowStatus and StatusText then
-				StatusText.Text = "Analyzer: " .. #remotesFound .. " remote(s), " .. #allScripts .. " script(s), " .. #noCodeScripts .. " without code"
+				StatusText.Text = "Analyzer: " .. #detected.npc .. " NPC(s), " .. #detected.door .. " door(s), " .. #detected.tool .. " tool(s), " .. #detected.spawnLocation .. " spawn(s), " .. #detected.remote .. " remote(s)"
 			end
 		end)
 		if not generatorOk then
