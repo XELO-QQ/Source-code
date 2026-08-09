@@ -3426,26 +3426,22 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 				if not scriptName or scriptName == "" then
 					return
 				end
-				local function scopePath(rawPath)
-					local scoped = rawPath or "ServerScriptService"
-					if scoped:find("^ServerScriptService/GeneratedRuntime/") then
-						scoped = scoped:gsub("^ServerScriptService/GeneratedRuntime/", "ServerScriptService/GeneratedRuntime/" .. profile.runtimeNamespace .. "/")
-					elseif scoped:find("^ServerScriptService/GeneratedSystems") then
-						scoped = scoped:gsub("^ServerScriptService/GeneratedSystems", "ServerScriptService/GeneratedRuntime/" .. profile.runtimeNamespace .. "/Systems")
-					elseif scoped:find("^ServerScriptService/GeneratedModules") then
-						scoped = scoped:gsub("^ServerScriptService/GeneratedModules", "ServerScriptService/GeneratedRuntime/" .. profile.runtimeNamespace .. "/Modules")
-					elseif scoped:find("^ServerScriptService/") then
-						scoped = scoped:gsub("^ServerScriptService/", "ServerScriptService/GeneratedRuntime/" .. profile.runtimeNamespace .. "/")
-					else
-						scoped = "ServerScriptService/GeneratedRuntime/" .. profile.runtimeNamespace .. "/" .. scoped
-					end
-					return scoped
+				local uniqueName = scriptName
+				if profile and profile.runtimeNamespace then
+					uniqueName = profile.runtimeNamespace .. "_" .. scriptName
+				end
+				local scopePathValue = "ServerScriptService"
+				if type(path) == "string" and path ~= "" then
+					scopePathValue = path
+				end
+				if scopePathValue:find("^ServerScriptService/") then
+					scopePathValue = "ServerScriptService"
 				end
 				table.insert(generated, {
 					className = className or "Script",
-					scriptName = scriptName,
+					scriptName = uniqueName,
 					source = source,
-					parentPath = scopePath(path or "ServerScriptService/GeneratedRuntime/Systems"),
+					parentPath = scopePathValue,
 				})
 			end
 
@@ -3916,15 +3912,6 @@ return true]], "ServerScriptService/GeneratedRuntime/Systems/Keyboard")
 		local _serverRebuildPlan = _buildServerReconstructionPlan(_scanProfile, game)
 		for _, entry in ipairs(_serverRebuildPlan) do
 			local targetParent = service.ServerScriptService
-			local pathParts = {}
-			for part in string.gmatch(entry.parentPath or "ServerScriptService/GeneratedRuntime/Systems", "[^/]+") do
-				table.insert(pathParts, part)
-			end
-			for _, partName in ipairs(pathParts) do
-				if partName ~= "ServerScriptService" then
-					targetParent = _ensureFolder(targetParent, partName)
-				end
-			end
 			local existing = targetParent:FindFirstChild(entry.scriptName)
 			if existing then
 				continue
@@ -3943,15 +3930,13 @@ return true]], "ServerScriptService/GeneratedRuntime/Systems/Keyboard")
 		-- SERVERSCRIPTSERVICE (Scripts & ModuleScripts)
 		----------------------------------------------------------------
 		local _SSS = service.ServerScriptService
-		local _GeneratedRoot = _ensureFolder(_SSS, "GeneratedRuntime")
 		local _RuntimeNamespace = (_scanProfile and _scanProfile.runtimeNamespace) or "GameRuntime_" .. tostring(math.floor(tick() * 1000) % 100000)
-		local _GameGeneratedRoot = _ensureFolder(_GeneratedRoot, _RuntimeNamespace)
-		local _GeneratedSystems = _ensureFolder(_GameGeneratedRoot, "Systems")
-		local _GeneratedModules = _ensureFolder(_GameGeneratedRoot, "Modules")
-		local _GeneratedCore = _ensureFolder(_GameGeneratedRoot, "Core")
+		local _GeneratedSystems = _SSS
+		local _GeneratedModules = _SSS
+		local _GeneratedCore = _SSS
 
 		_addFakeScript = function(cls, name, src, folderOverride)
-			local parent = folderOverride or _GeneratedSystems
+			local parent = folderOverride or _SSS
 			_addFake(cls, name, src, parent)
 		end
 
