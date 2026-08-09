@@ -3182,16 +3182,14 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		end
 		local generatorOk, generatorErr = pcall(function()
 			----------------------------------------------------------------
-			-- 1) SCANNER: detect objects across the WHOLE game
+			-- 1) SCANNER: detect objects AND scripts across the WHOLE game
 			----------------------------------------------------------------
+			local allDesc = game:GetDescendants()
 			local detected = {
-				npc = {},
-				tool = {},
-				door = {},
-				clickDetector = {},
-				proximityPrompt = {},
-				spawnLocation = {},
-				remote = {},
+				npc = {}, enemy = {}, boss = {}, tool = {}, weapon = {}, door = {},
+				clickDetector = {}, proximityPrompt = {}, spawnLocation = {}, checkpoint = {},
+				remote = {}, seat = {}, money = {}, chest = {}, teleport = {}, shop = {},
+				script = {},
 			}
 			local seenModels = {}
 			local function isPlayerCharacter(model)
@@ -3204,10 +3202,18 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 				end
 				return false
 			end
+			local function nameMatch(nm, ...)
+				for _, kw in ipairs({...}) do
+					if string_find(nm, kw) then
+						return true
+					end
+				end
+				return false
+			end
 			local function addDetect(list, inst)
 				table.insert(list, { name = inst.Name, class = inst.ClassName, path = inst:GetFullName() })
 			end
-			for _, inst in ipairs(game:GetDescendants()) do
+			for _, inst in ipairs(allDesc) do
 				if inst:IsA("RemoteEvent") or inst:IsA("RemoteFunction") or inst:IsA("UnreliableRemoteEvent") then
 					addDetect(detected.remote, inst)
 				elseif inst:IsA("SpawnLocation") then
@@ -3216,83 +3222,138 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 					addDetect(detected.clickDetector, inst)
 				elseif inst:IsA("ProximityPrompt") then
 					addDetect(detected.proximityPrompt, inst)
+				elseif inst:IsA("VehicleSeat") then
+					addDetect(detected.seat, inst)
 				elseif inst:IsA("Tool") then
+					local nm = string.lower(inst.Name)
 					addDetect(detected.tool, inst)
-				elseif not seenModels[inst] and inst:IsA("Model") and inst:FindFirstChildOfClass("Humanoid") then
-					if not isPlayerCharacter(inst) then
-						seenModels[inst] = true
-						addDetect(detected.npc, inst)
+					if nameMatch(nm, "sword", "weapon", "gun", "knife", "blade", "bat", "hammer", "rifle", "pistol", "staff", "bow", "axe", "saber", "damage") then
+						addDetect(detected.weapon, inst)
+					end
+					if nameMatch(nm, "shop", "store", "market", "vendor", "buy") then
+						addDetect(detected.shop, inst)
+					end
+				elseif inst:IsA("Model") and inst:FindFirstChildOfClass("Humanoid") and not isPlayerCharacter(inst) and not seenModels[inst] then
+					local nm = string.lower(inst.Name)
+					seenModels[inst] = true
+					addDetect(detected.npc, inst)
+					if nameMatch(nm, "enemy", "mob", "zombie", "skeleton", "slime", "guard", "grunt", "monster", "bandit", "wolf", "orc") then
+						addDetect(detected.enemy, inst)
+					end
+					if nameMatch(nm, "boss", "king", "giant", "dragon", "final") then
+						addDetect(detected.boss, inst)
 					end
 				elseif not seenModels[inst] and (inst:IsA("BasePart") or inst:IsA("Model")) then
 					local nm = string.lower(inst.Name)
-					if string_find(nm, "door") or inst:FindFirstChildOfClass("HingeConstraint") then
-						seenModels[inst] = true
+					seenModels[inst] = true
+					if nameMatch(nm, "door", "gate") or inst:FindFirstChildOfClass("HingeConstraint") then
 						addDetect(detected.door, inst)
+					elseif nameMatch(nm, "chest", "crate", "loot", "box", "gift", "present") then
+						addDetect(detected.chest, inst)
+					elseif nameMatch(nm, "teleport", "warp", "portal", "zone", "exit") then
+						addDetect(detected.teleport, inst)
+					elseif nameMatch(nm, "checkpoint", "respawn", "savepoint") then
+						addDetect(detected.checkpoint, inst)
+					elseif nameMatch(nm, "coin", "money", "gold", "cash", "bank", "gem", "dollar", "cashregister") then
+						addDetect(detected.money, inst)
+					end
+				end
+			end
+			for _, s in ipairs(allDesc) do
+				if s:IsA("LuaSourceContainer") then
+					local ok, src = pcall(function() return s.Source end)
+					table.insert(detected.script, {
+						name = s.Name,
+						class = s.ClassName,
+						path = s:GetFullName(),
+						source = ok and src or "",
+					})
+				end
+			end
+
+			----------------------------------------------------------------
+			-- 2) ANALYZER: classify scripts + objects into systems (by name)
+			----------------------------------------------------------------
+			local SYSTEMS = {
+				{ name = "PetSystem",         keywords = { "pet", "egg", "hatch", "breed" },                          lists = {} },
+				{ name = "DailySystem",       keywords = { "daily", "reward", "claim", "streak", "gift" },             lists = { "chest" } },
+				{ name = "TradeSystem",       keywords = { "trade", "trading", "exchange" },                           lists = {} },
+				{ name = "AdminSystem",       keywords = { "admin", "command", "moderator", "ban", "kick", "panel" },  lists = {} },
+				{ name = "QuestSystem",       keywords = { "quest", "mission", "objective", "task" },                  lists = {} },
+				{ name = "TeamSystem",        keywords = { "team", "guild", "clan", "party", "faction" },              lists = {} },
+				{ name = "GamepassSystem",    keywords = { "gamepass", "perks", "donator", "vip", "pass" },           lists = {} },
+				{ name = "BadgeSystem",       keywords = { "badge", "achievement", "trophy" },                        lists = {} },
+				{ name = "SkillSystem",       keywords = { "skill", "ability", "level", "exp", "xp", "upgrade" },     lists = {} },
+				{ name = "AntiCheatSystem",   keywords = { "anti", "cheat", "exploit", "moderation", "guard" },        lists = {} },
+				{ name = "DataSystem",        keywords = { "data", "save", "load", "profile", "database", "playerdata" }, lists = {} },
+				{ name = "EconomySystem",     keywords = { "economy", "currency", "balance", "bank", "cash" },         lists = { "money" } },
+				{ name = "InventorySystem",   keywords = { "inventory", "backpack", "equip", "item" },                 lists = { "tool" } },
+				{ name = "ShopSystem",        keywords = { "shop", "store", "market", "vendor", "buy" },              lists = { "shop" } },
+				{ name = "CombatSystem",      keywords = { "combat", "damage", "health", "fight", "kill", "slash" },   lists = { "weapon", "enemy", "boss" } },
+				{ name = "LeaderboardSystem", keywords = { "leaderboard", "leader", "stats", "rank", "points" },       lists = {} },
+				{ name = "SpawnSystem",       keywords = { "spawn", "respawn", "checkpoint" },                         lists = { "spawnLocation", "checkpoint" } },
+				{ name = "DoorSystem",        keywords = { "door", "gate" },                                           lists = { "door" } },
+				{ name = "LootSystem",        keywords = { "chest", "crate", "loot", "drop" },                         lists = { "chest", "money" } },
+				{ name = "TeleportSystem",    keywords = { "teleport", "warp", "portal", "zone" },                     lists = { "teleport" } },
+				{ name = "VehicleSystem",     keywords = { "vehicle", "car", "drive", "seat" },                        lists = { "seat" } },
+				{ name = "NPCSystem",         keywords = { "npc", "dialogue", "talk", "villager", "merchant" },        lists = { "npc", "enemy", "boss" } },
+				{ name = "WeatherSystem",     keywords = { "weather", "day", "night", "cycle", "sky", "fog" },         lists = {} },
+				{ name = "MusicSystem",       keywords = { "music", "audio", "sound", "boombox", "playlist" },         lists = {} },
+				{ name = "NotificationSystem",keywords = { "notification", "message", "mail", "announcement", "broadcast", "chat" }, lists = {} },
+				{ name = "TutorialSystem",    keywords = { "tutorial", "guide", "hint", "tips" },                      lists = {} },
+				{ name = "InteractionSystem", keywords = {},                                                           lists = { "clickDetector", "proximityPrompt" } },
+			}
+			local systemMatch = {}
+			for _, s in ipairs(detected.script) do
+				local nm = string.lower(s.name)
+				for _, sys in ipairs(SYSTEMS) do
+					if nameMatch(nm, unpack(sys.keywords)) then
+						local m = systemMatch[sys.name]
+						if not m then
+							m = { system = sys, scripts = {} }
+							systemMatch[sys.name] = m
+						end
+						table.insert(m.scripts, { name = s.name, class = s.class, path = s.path })
+						break
 					end
 				end
 			end
 
 			----------------------------------------------------------------
-			-- 2) ANALYZER: classify detected objects into systems
+			-- 3) GENERATOR: build one server script per detected system
 			----------------------------------------------------------------
-			local systems = {
-				npc = detected.npc,
-				door = detected.door,
-				tool = detected.tool,
-				spawn = detected.spawnLocation,
-				interaction = {},
-				shop = {},
-				combat = {},
-			}
-			for _, d in ipairs(detected.clickDetector) do
-				table.insert(systems.interaction, { kind = "ClickDetector", name = d.name, class = d.class, path = d.path })
-			end
-			for _, d in ipairs(detected.proximityPrompt) do
-				table.insert(systems.interaction, { kind = "ProximityPrompt", name = d.name, class = d.class, path = d.path })
-			end
-			for _, t in ipairs(detected.tool) do
-				local nm = string.lower(t.name)
-				if string_find(nm, "shop") or string_find(nm, "buy") or string_find(nm, "price") or string_find(nm, "sell") or string_find(nm, "store") then
-					table.insert(systems.shop, t)
+			local function itemsLua(items)
+				local parts = {}
+				for _, it in ipairs(items) do
+					table.insert(parts, '{ name = "' .. it.name .. '", path = "' .. it.path .. '" }')
 				end
-				if string_find(nm, "sword") or string_find(nm, "weapon") or string_find(nm, "gun") or string_find(nm, "knife") or string_find(nm, "blade") or string_find(nm, "damage") then
-					table.insert(systems.combat, t)
+				if #parts == 0 then
+					return "{}"
 				end
+				return "{\n\t\t" .. table.concat(parts, ",\n\t\t") .. "\n\t}"
 			end
 
-			----------------------------------------------------------------
-			-- 3) GENERATOR: build manager modules from the systems
-			----------------------------------------------------------------
-			local function buildManager(managerName, items, methodsLua)
+			local function buildSystemScript(sysName, items, scripts, logicLua)
 				local L = {}
 				table.insert(L, "--[[")
-				table.insert(L, "  GENERATED MANAGER: " .. managerName)
-				table.insert(L, "  Auto-created by the Server Script Generator.")
+				table.insert(L, "  " .. sysName)
+				table.insert(L, "  Generated by the Server Script Generator.")
+				table.insert(L, "  Rebuilds the server-side logic for this detected system.")
 				table.insert(L, "]]")
-				table.insert(L, "local " .. managerName .. " = {}")
+				table.insert(L, "local DETECTED = " .. itemsLua(items))
 				table.insert(L, "")
-				table.insert(L, managerName .. ".items = {")
-				for _, item in ipairs(items) do
-					local fields = { 'name = "' .. item.name .. '"', 'path = "' .. item.path .. '"' }
-					if item.class then
-						table.insert(fields, 'class = "' .. item.class .. '"')
-					end
-					if item.kind then
-						table.insert(fields, 'kind = "' .. item.kind .. '"')
-					end
-					table.insert(L, "\t{ " .. table.concat(fields, ", ") .. " },")
-				end
-				table.insert(L, "}")
+				table.insert(L, "local RECONSTRUCTED = " .. itemsLua(scripts))
 				table.insert(L, "")
-				table.insert(L, methodsLua)
-				table.insert(L, "")
-				table.insert(L, "return " .. managerName)
+				table.insert(L, logicLua)
 				return table.concat(L, "\n")
 			end
 
-			local npcMethods = [=[
-function NPCManager:Find(name)
-	for _, item in ipairs(self.items) do
+			local LOGIC = {}
+			LOGIC.NPCSystem = [=[
+local Players = game:GetService("Players")
+
+local function find(name)
+	for _, item in ipairs(DETECTED) do
 		if item.name == name then
 			return game:FindFirstChild(item.path, true)
 		end
@@ -3300,32 +3361,40 @@ function NPCManager:Find(name)
 	return nil
 end
 
-function NPCManager:GetHumanoid(npc)
-	local model = type(npc) == "string" and self:Find(npc) or npc
-	if not model then
-		return nil
-	end
-	return model:FindFirstChildOfClass("Humanoid")
+local function humanoidOf(npc)
+	local model = type(npc) == "string" and find(npc) or npc
+	return model and model:FindFirstChildOfClass("Humanoid")
 end
 
-function NPCManager:Talk(npc, player, message)
-	local humanoid = self:GetHumanoid(npc)
+function Talk(npc, player, message)
+	local humanoid = humanoidOf(npc)
 	if humanoid then
 		humanoid:SetStateEnabled(Enum.HumanoidStateType.Physics, true)
 	end
-	print(("[NPCManager] %s says to %s: %s"):format(tostring(npc), tostring(player), tostring(message)))
+	print(("[NPCSystem] %s -> %s: %s"):format(tostring(npc), tostring(player), tostring(message)))
 end
 
-function NPCManager:SetSpeed(npc, speed)
-	local humanoid = self:GetHumanoid(npc)
+function SetSpeed(npc, speed)
+	local humanoid = humanoidOf(npc)
 	if humanoid then
 		humanoid.WalkSpeed = speed
 	end
-end]=]
+end
 
-			local doorMethods = [=[
-function DoorManager:GetDoor(name)
-	for _, item in ipairs(self.items) do
+function Respawn(npc)
+	local model = type(npc) == "string" and find(npc) or npc
+	if not model then return end
+	local humanoid = model:FindFirstChildOfClass("Humanoid")
+	if humanoid and humanoid.Health <= 0 then
+		humanoid.Health = humanoid.MaxHealth
+	end
+end
+
+return { Talk = Talk, SetSpeed = SetSpeed, Respawn = Respawn, Items = DETECTED }
+]=]
+			LOGIC.DoorSystem = [=[
+local function find(name)
+	for _, item in ipairs(DETECTED) do
 		if item.name == name then
 			return game:FindFirstChild(item.path, true)
 		end
@@ -3333,11 +3402,9 @@ function DoorManager:GetDoor(name)
 	return nil
 end
 
-function DoorManager:SetOpen(door, open)
-	door = type(door) == "string" and self:GetDoor(door) or door
-	if not door then
-		return false
-	end
+function SetOpen(door, open)
+	door = type(door) == "string" and find(door) or door
+	if not door then return false end
 	local hinge = door:FindFirstChildOfClass("HingeConstraint")
 	if hinge then
 		hinge.ActuatorType = Enum.ActuatorType.Servo
@@ -3346,143 +3413,663 @@ function DoorManager:SetOpen(door, open)
 		return true
 	end
 	local part = door:IsA("BasePart") and door or door.PrimaryPart
-	if part then
-		part:SetAttribute("Open", open)
-	end
+	if part then part:SetAttribute("Open", open) end
 	return true
 end
 
-function DoorManager:Toggle(door)
-	door = type(door) == "string" and self:GetDoor(door) or door
-	if not door then
-		return false
-	end
+function Toggle(door)
+	door = type(door) == "string" and find(door) or door
+	if not door then return false end
 	local open = door:GetAttribute("Open")
-	self:SetOpen(door, not open)
+	SetOpen(door, not open)
 	return not open
-end]=]
-
-			local toolMethods = [=[
-function ToolManager:GetTool(name)
-	for _, item in ipairs(self.items) do
-		if item.name == name then
-			return game:FindFirstChild(item.path, true)
-		end
-	end
-	return nil
 end
 
-function ToolManager:Give(player, tool)
-	tool = type(tool) == "string" and self:GetTool(tool) or tool
-	if not tool or not tool:IsA("Tool") then
-		return false
-	end
-	local backpack = player:FindFirstChildOfClass("Backpack")
-	local clone = tool:Clone()
-	clone.Parent = backpack or player
-	return true
-end
-
-function ToolManager:Take(player, toolName)
-	local backpack = player:FindFirstChildOfClass("Backpack")
-	if not backpack then
-		return false
-	end
-	local found = backpack:FindFirstChild(toolName)
-	if found then
-		found:Destroy()
-		return true
-	end
-	return false
-end]=]
-
-			local spawnMethods = [=[
-function SpawnManager:FindSpawn(name)
-	for _, item in ipairs(self.items) do
-		if item.name == name then
-			return game:FindFirstChild(item.path, true)
-		end
-	end
-	return nil
-end
-
-function SpawnManager:RandomSpawn()
-	local list = self.items
-	if #list == 0 then
-		return nil
-	end
-	return game:FindFirstChild(list[math.random(1, #list)].path, true)
-end
-
-function SpawnManager:Teleport(player, spawn)
-	if not player.Character then
-		return false
-	end
-	local target = spawn and (type(spawn) == "string" and self:FindSpawn(spawn) or spawn) or self:RandomSpawn()
-	if not target then
-		return false
-	end
-	local position = target:IsA("SpawnLocation") and target.Position or target:GetPivot().Position
-	player.Character:MoveTo(position + Vector3.new(0, 3, 0))
-	return true
-end]=]
-
-			local interactionMethods = [=[
-function InteractionManager:FindInteraction(name)
-	for _, item in ipairs(self.items) do
-		if item.name == name then
-			return game:FindFirstChild(item.path, true)
-		end
-	end
-	return nil
-end
-
-function InteractionManager:Handle(player, object, kind)
-	print(("[InteractionManager] %s interacted with %s (%s)"):format(tostring(player), tostring(object and object.Name), tostring(kind)))
-end
-
-function InteractionManager:WireAll()
-	for _, item in ipairs(self.items) do
-		local object = game:FindFirstChild(item.path, true)
-		if object and object:IsA("ClickDetector") then
-			object.MouseClick:Connect(function(player)
-				self:Handle(player, object, "ClickDetector")
-			end)
-		elseif object and object:IsA("ProximityPrompt") then
-			object.Triggered:Connect(function(player)
-				self:Handle(player, object, "ProximityPrompt")
+for _, item in ipairs(DETECTED) do
+	local door = game:FindFirstChild(item.path, true)
+	if door then
+		local part = door:IsA("BasePart") and door or door.PrimaryPart
+		if part then
+			part.Touched:Connect(function(hit)
+				local character = hit and hit.Parent
+				if character and character:FindFirstChildOfClass("Humanoid") then
+					SetOpen(door, true)
+					task.delay(3, function() SetOpen(door, false) end)
+				end
 			end)
 		end
 	end
-end]=]
+end
 
-			local bootstrapSource = [=[
---[[
-  GENERATED BOOTSTRAP
-  Auto-created by the Server Script Generator.
-  Requires the generated managers and wires the detected interactions.
-]]
+return { SetOpen = SetOpen, Toggle = Toggle, Items = DETECTED }
+]=]
+			LOGIC.SpawnSystem = [=[
 local Players = game:GetService("Players")
 
-local NPCManager = require(script.Parent.NPCManager)
-local DoorManager = require(script.Parent.DoorManager)
-local ToolManager = require(script.Parent.ToolManager)
-local SpawnManager = require(script.Parent.SpawnManager)
-local InteractionManager = require(script.Parent.InteractionManager)
+local function randomSpawn()
+	if #DETECTED == 0 then return nil end
+	local item = DETECTED[math.random(1, #DETECTED)]
+	return game:FindFirstChild(item.path, true)
+end
 
-InteractionManager:WireAll()
+local function teleport(player)
+	if not player.Character then return end
+	local target = randomSpawn()
+	if not target then return end
+	local pos = target:IsA("SpawnLocation") and target.Position or target:GetPivot().Position
+	player.Character:MoveTo(pos + Vector3.new(0, 3, 0))
+end
 
-Players.PlayerAdded:Connect(function(player)
-	SpawnManager:Teleport(player)
+local function onAdded(player)
+	player.CharacterAdded:Connect(teleport)
+	teleport(player)
+end
+
+for _, p in ipairs(Players:GetPlayers()) do onAdded(p) end
+Players.PlayerAdded:Connect(onAdded)
+]=]
+			LOGIC.ShopSystem = [=[
+local function find(name)
+	for _, item in ipairs(DETECTED) do
+		if item.name == name then
+			return game:FindFirstChild(item.path, true)
+		end
+	end
+	return nil
+end
+
+function Buy(player, itemName)
+	local tool = find(itemName)
+	if not tool or not tool:IsA("Tool") then return false end
+	local backpack = player:FindFirstChildOfClass("Backpack")
+	tool:Clone().Parent = backpack or player
+	return true
+end
+
+for _, item in ipairs(DETECTED) do
+	local tool = game:FindFirstChild(item.path, true)
+	if tool and tool:IsA("Tool") then
+		local detector = tool:FindFirstChildOfClass("ClickDetector")
+		if detector then
+			detector.MouseClick:Connect(function(player) Buy(player, item.name) end)
+		end
+	end
+end
+
+return { Buy = Buy, Items = DETECTED }
+]=]
+			LOGIC.CombatSystem = [=[
+local cooldowns = {}
+
+local function damage(victim, amount, attacker)
+	if not victim or not victim:FindFirstChildOfClass("Humanoid") then return end
+	victim:FindFirstChildOfClass("Humanoid"):TakeDamage(amount)
+	print(("[Combat] %s hit %s for %d"):format(tostring(attacker), victim.Name, amount))
+end
+
+for _, item in ipairs(DETECTED) do
+	local weapon = game:FindFirstChild(item.path, true)
+	if weapon and weapon:IsA("Tool") then
+		weapon.Activated:Connect(function()
+			local Players = game:GetService("Players")
+			local player = Players:GetPlayerFromCharacter(weapon.Parent)
+			local root = weapon.Parent and weapon.Parent:FindFirstChild("HumanoidRootPart")
+			if not player or not root then return end
+			local now = os.clock()
+			if cooldowns[player.UserId] and now - cooldowns[player.UserId] < 0.6 then return end
+			cooldowns[player.UserId] = now
+			for _, eitem in ipairs(DETECTED) do
+				local e = game:FindFirstChild(eitem.path, true)
+				if e and e:FindFirstChildOfClass("Humanoid") then
+					local eroot = e:FindFirstChild("HumanoidRootPart")
+					if eroot and (eroot.Position - root.Position).Magnitude < 12 then
+						damage(e, 20, weapon.Parent)
+					end
+				end
+			end
+		end)
+	end
+end
+
+return { Damage = damage }
+]=]
+			LOGIC.LootSystem = [=[
+local Players = game:GetService("Players")
+
+local function openLoot(player, obj)
+	if obj:GetAttribute("Opened") then return end
+	obj:SetAttribute("Opened", true)
+	local backpack = player:FindFirstChildOfClass("Backpack")
+	for _, item in ipairs(DETECTED) do
+		local tool = game:FindFirstChild(item.path, true)
+		if tool and tool:IsA("Tool") then
+			tool:Clone().Parent = backpack or player
+			break
+		end
+	end
+	print(("[Loot] %s opened %s"):format(tostring(player), obj.Name))
+end
+
+for _, item in ipairs(DETECTED) do
+	local obj = game:FindFirstChild(item.path, true)
+	if not obj then
+		continue
+	end
+	local part = obj:IsA("BasePart") and obj or obj.PrimaryPart
+	local detector = obj:FindFirstChildOfClass("ClickDetector")
+	if detector then
+		detector.MouseClick:Connect(function(player) openLoot(player, obj) end)
+	elseif part then
+		part.Touched:Connect(function(hit)
+			local character = hit and hit.Parent
+			local player = character and Players:GetPlayerFromCharacter(character)
+			if player then openLoot(player, obj) end
+		end)
+	end
+end
+]=]
+			LOGIC.TeleportSystem = [=[
+local Players = game:GetService("Players")
+
+for _, item in ipairs(DETECTED) do
+	local part = game:FindFirstChild(item.path, true)
+	if part and part:IsA("BasePart") then
+		part.Touched:Connect(function(hit)
+			local character = hit and hit.Parent
+			local player = character and Players:GetPlayerFromCharacter(character)
+			if not player then return end
+			local targetName = part:GetAttribute("Target") or part.Name .. "_Target"
+			local target = game.Workspace:FindFirstChild(targetName)
+			if target and target:IsA("BasePart") then
+				character:MoveTo(target.Position + Vector3.new(0, 3, 0))
+			end
+		end)
+	end
+end
+]=]
+			LOGIC.VehicleSystem = [=[
+for _, item in ipairs(DETECTED) do
+	local seat = game:FindFirstChild(item.path, true)
+	if seat and seat:IsA("VehicleSeat") then
+		seat:GetPropertyChangedSignal("Occupant"):Connect(function()
+			local occ = seat.Occupant
+			if occ then
+				print(("[Vehicle] %s is driving %s"):format(occ.Parent and occ.Parent.Name or "?", seat.Parent and seat.Parent.Name or "?"))
+			end
+		end)
+	end
+end
+]=]
+			LOGIC.DataSystem = [=[
+local DataStoreService = game:GetService("DataStoreService")
+local Players = game:GetService("Players")
+
+local storeOk, store = pcall(function()
+	return DataStoreService:GetDataStore("GeneratedPlayerData")
 end)
 
-return {
-	NPCManager = NPCManager,
-	DoorManager = DoorManager,
-	ToolManager = ToolManager,
-	SpawnManager = SpawnManager,
-	InteractionManager = InteractionManager,
-}
+local data = {}
+
+local function load(player)
+	if not storeOk then return {} end
+	local key = "Player_" .. player.UserId
+	local ok, value = pcall(function() return store:GetAsync(key) end)
+	if ok and value then
+		data[player.UserId] = value
+	else
+		data[player.UserId] = {}
+	end
+	print(("[Data] Loaded %s"):format(tostring(player)))
+	return data[player.UserId]
+end
+
+local function save(player)
+	if not storeOk or not data[player.UserId] then return end
+	local key = "Player_" .. player.UserId
+	pcall(function() store:SetAsync(key, data[player.UserId]) end)
+end
+
+local function onAdded(player)
+	data[player.UserId] = {}
+	task.spawn(load, player)
+end
+
+for _, p in ipairs(Players:GetPlayers()) do onAdded(p) end
+Players.PlayerAdded:Connect(onAdded)
+Players.PlayerRemoving:Connect(save)
+
+game:BindToClose(function()
+	for _, p in ipairs(Players:GetPlayers()) do save(p) end
+end)
+
+return { Load = load, Save = save }
+]=]
+			LOGIC.LeaderboardSystem = [=[
+local Players = game:GetService("Players")
+
+local function addStat(player, name, value)
+	local folder = player:FindFirstChild("leaderstats")
+	if not folder then
+		folder = Instance.new("Folder")
+		folder.Name = "leaderstats"
+		folder.Parent = player
+	end
+	local stat = folder:FindFirstChild(name)
+	if not stat then
+		stat = Instance.new("IntValue")
+		stat.Name = name
+		stat.Parent = folder
+	end
+	stat.Value = value
+end
+
+local function onAdded(player)
+	addStat(player, "Wins", 0)
+	addStat(player, "Kills", 0)
+	addStat(player, "Level", 1)
+end
+
+for _, p in ipairs(Players:GetPlayers()) do onAdded(p) end
+Players.PlayerAdded:Connect(onAdded)
+
+return { AddStat = addStat }
+]=]
+			LOGIC.EconomySystem = [=[
+local Players = game:GetService("Players")
+local balances = {}
+
+local function getBalance(player)
+	return balances[player.UserId] or 0
+end
+
+local function updateLeader(player)
+	local folder = player:FindFirstChild("leaderstats")
+	if folder then
+		local cash = folder:FindFirstChild("Cash")
+		if cash then cash.Value = getBalance(player) end
+	end
+end
+
+local function addBalance(player, amount)
+	balances[player.UserId] = getBalance(player) + amount
+	updateLeader(player)
+	return balances[player.UserId]
+end
+
+local function spend(player, amount)
+	if getBalance(player) < amount then return false end
+	balances[player.UserId] = getBalance(player) - amount
+	updateLeader(player)
+	return true
+end
+
+for _, p in ipairs(Players:GetPlayers()) do updateLeader(p) end
+Players.PlayerRemoving:Connect(function(p) balances[p.UserId] = nil end)
+
+return { Get = getBalance, Add = addBalance, Spend = spend }
+]=]
+			LOGIC.InventorySystem = [=[
+local function has(player, toolName)
+	local backpack = player:FindFirstChildOfClass("Backpack")
+	return backpack and backpack:FindFirstChild(toolName) ~= nil
+end
+
+local function give(player, tool)
+	if type(tool) == "string" then
+		for _, item in ipairs(DETECTED) do
+			if item.name == tool then
+				tool = game:FindFirstChild(item.path, true)
+				break
+			end
+		end
+	end
+	if not tool or not tool:IsA("Tool") then return false end
+	local backpack = player:FindFirstChildOfClass("Backpack")
+	tool:Clone().Parent = backpack or player
+	return true
+end
+
+local function take(player, toolName)
+	local backpack = player:FindFirstChildOfClass("Backpack")
+	if backpack then
+		local found = backpack:FindFirstChild(toolName)
+		if found then
+			found:Destroy()
+			return true
+		end
+	end
+	return false
+end
+
+return { Has = has, Give = give, Take = take }
+]=]
+			LOGIC.QuestSystem = [=[
+local progress = {}
+
+local function start(player, questId)
+	progress[player.UserId] = progress[player.UserId] or {}
+	progress[player.UserId][questId] = { stage = 1, done = false }
+	print(("[Quest] %s started %s"):format(tostring(player), tostring(questId)))
+end
+
+local function update(player, questId, amount)
+	local p = progress[player.UserId]
+	if not p or not p[questId] then return end
+	p[questId].stage = p[questId].stage + (amount or 1)
+	print(("[Quest] %s progress %s -> %d"):format(tostring(player), tostring(questId), p[questId].stage))
+end
+
+local function complete(player, questId)
+	local p = progress[player.UserId]
+	if not p or not p[questId] then return end
+	p[questId].done = true
+	p[questId].stage = 0
+	print(("[Quest] %s completed %s"):format(tostring(player), tostring(questId)))
+end
+
+return { Start = start, Update = update, Complete = complete }
+]=]
+			LOGIC.TeamSystem = [=[
+local Teams = game:GetService("Teams")
+
+local function assign(player, teamName)
+	local team = Teams:FindFirstChild(teamName)
+	if not team or not team:IsA("Team") then
+		team = Instance.new("Team")
+		team.Name = teamName
+		team.AutoAssignable = false
+		team.Parent = Teams
+	end
+	player.Team = team
+end
+
+local function getTeam(player)
+	return player.Team
+end
+
+return { Assign = assign, Get = getTeam }
+]=]
+			LOGIC.TradeSystem = [=[
+local offers = {}
+
+local function request(a, b)
+	if not a or not b then return false end
+	local key = a.UserId .. ":" .. b.UserId
+	offers[key] = { a = {}, b = {} }
+	offers[b.UserId .. ":" .. a.UserId] = offers[key]
+	print(("[Trade] %s requested a trade with %s"):format(tostring(a), tostring(b)))
+	return true
+end
+
+local function addItem(player, other, toolName, quantity)
+	local key = other.UserId .. ":" .. player.UserId
+	local offer = offers[key]
+	if not offer then return false end
+	local side = offer.a == other and "a" or "b"
+	table.insert(offer[side], { name = toolName, quantity = quantity or 1 })
+	return true
+end
+
+local function confirm(player, other)
+	local key = other.UserId .. ":" .. player.UserId
+	local offer = offers[key]
+	if not offer then return false end
+	print(("[Trade] %s confirmed the trade with %s"):format(tostring(player), tostring(other)))
+	offers[key] = nil
+	offers[player.UserId .. ":" .. other.UserId] = nil
+	return true
+end
+
+return { Request = request, AddItem = addItem, Confirm = confirm }
+]=]
+			LOGIC.AdminSystem = [=[
+local Players = game:GetService("Players")
+local prefix = "!"
+
+local function runCommand(player, message)
+	if not message or string.sub(message, 1, 1) ~= prefix then return end
+	local parts = {}
+	for part in string.gmatch(message, "%S+") do
+		table.insert(parts, part)
+	end
+	local cmd = string.lower(parts[1] and string.sub(parts[1], 2) or "")
+	local arg = parts[2]
+
+	if cmd == "kick" and arg then
+		local target = Players:FindFirstChild(arg)
+		if target then target:Kick("Kicked by admin") end
+	elseif cmd == "freeze" and arg then
+		local target = Players:FindFirstChild(arg)
+		if target and target.Character then
+			local humanoid = target.Character:FindFirstChildOfClass("Humanoid")
+			if humanoid then humanoid.WalkSpeed = 0 end
+		end
+	elseif cmd == "unfreeze" and arg then
+		local target = Players:FindFirstChild(arg)
+		if target and target.Character then
+			local humanoid = target.Character:FindFirstChildOfClass("Humanoid")
+			if humanoid then humanoid.WalkSpeed = 16 end
+		end
+	elseif cmd == "announce" then
+		print(("[Admin] %s announced: %s"):format(tostring(player), arg or ""))
+	end
+end
+
+Players.PlayerAdded:Connect(function(player)
+	player.Chatted:Connect(function(m) runCommand(player, m) end)
+end)
+]=]
+			LOGIC.AntiCheatSystem = [=[
+local Players = game:GetService("Players")
+local maxSpeed = 75
+
+local function checkCharacter(player, character)
+	task.spawn(function()
+		task.wait(1)
+		local humanoid = character:FindFirstChildOfClass("Humanoid")
+		local root = character:FindFirstChild("HumanoidRootPart")
+		if not humanoid or not root then return end
+		local last = root.Position
+		local flagCount = 0
+		while humanoid and humanoid.Health > 0 do
+			task.wait(0.5)
+			local speed = (root.Position - last).Magnitude / 0.5
+			last = root.Position
+			if speed > maxSpeed then
+				flagCount += 1
+				print(("[AntiCheat] %s flagged for speed %.1f"):format(tostring(player), speed))
+				if flagCount >= 3 then
+					humanoid.Health = 0
+					return
+				end
+			end
+		end
+	end)
+end
+
+Players.PlayerAdded:Connect(function(player)
+	player.CharacterAdded:Connect(function(char) checkCharacter(player, char) end)
+	if player.Character then checkCharacter(player, player.Character) end
+end)
+]=]
+			LOGIC.WeatherSystem = [=[
+local Lighting = game:GetService("Lighting")
+local dayLength = 300
+
+task.spawn(function()
+	while true do
+		local step = task.wait(1)
+		Lighting.ClockTime = (Lighting.ClockTime + (24 / dayLength) * step) % 24
+	end
+end)
+
+return { ClockTime = function() return Lighting.ClockTime end }
+]=]
+			LOGIC.PetSystem = [=[
+local function spawnPet(player, petName)
+	if not player.Character then return false end
+	for _, item in ipairs(DETECTED) do
+		if item.name == petName then
+			local pet = game:FindFirstChild(item.path, true)
+			if pet then
+				local clone = pet:Clone()
+				clone.Parent = workspace
+				clone:PivotTo(player.Character:GetPivot())
+				task.spawn(function()
+					while clone.Parent and player.Parent do
+						task.wait(1)
+						if player.Character and clone:FindFirstChild("HumanoidRootPart") then
+							local charRoot = player.Character:FindFirstChild("HumanoidRootPart")
+							if charRoot then
+								clone.HumanoidRootPart:PivotTo(charRoot.CFrame * CFrame.new(2, 0, 2))
+							end
+						end
+					end
+					clone:Destroy()
+				end)
+				return true
+			end
+		end
+	end
+	return false
+end
+
+return { Spawn = spawnPet }
+]=]
+			LOGIC.DailySystem = [=[
+local Players = game:GetService("Players")
+local lastClaim = {}
+
+local function canClaim(player)
+	local last = lastClaim[player.UserId] or 0
+	return os.time() - last >= 86400
+end
+
+local function claim(player)
+	if not canClaim(player) then return false end
+	lastClaim[player.UserId] = os.time()
+	local folder = player:FindFirstChild("leaderstats")
+	if folder then
+		local cash = folder:FindFirstChild("Cash")
+		if cash then cash.Value += 100 end
+	end
+	print(("[Daily] %s claimed the daily reward"):format(tostring(player)))
+	return true
+end
+
+return { CanClaim = canClaim, Claim = claim }
+]=]
+			LOGIC.TutorialSystem = [=[
+local function start(player)
+	print(("[Tutorial] %s started the tutorial"):format(tostring(player)))
+end
+
+local function advance(player, step)
+	print(("[Tutorial] %s reached step %s"):format(tostring(player), tostring(step)))
+end
+
+local function finish(player)
+	print(("[Tutorial] %s finished the tutorial"):format(tostring(player)))
+end
+
+return { Start = start, Advance = advance, Finish = finish }
+]=]
+			LOGIC.NotificationSystem = [=[
+local function send(player, title, text, duration)
+	print(("[Notice] %s: %s"):format(tostring(title), tostring(text)))
+end
+
+local function broadcast(title, text)
+	for _, player in ipairs(game:GetService("Players"):GetPlayers()) do
+		send(player, title, text)
+	end
+end
+
+return { Send = send, Broadcast = broadcast }
+]=]
+			LOGIC.GamepassSystem = [=[
+local Players = game:GetService("Players")
+local perks = {}
+
+local function grant(player, gamepassId, perkName)
+	perks[player.UserId] = perks[player.UserId] or {}
+	perks[player.UserId][gamepassId] = true
+	print(("[Gamepass] %s granted %s"):format(tostring(player), tostring(perkName)))
+end
+
+local function has(player, gamepassId)
+	if not perks[player.UserId] then return false end
+	return perks[player.UserId][gamepassId] == true
+end
+
+return { Grant = grant, Has = has }
+]=]
+			LOGIC.SkillSystem = [=[
+local skills = {}
+
+local function grant(player, skillName, level)
+	skills[player.UserId] = skills[player.UserId] or {}
+	skills[player.UserId][skillName] = level or 1
+	print(("[Skill] %s gained %s Lv.%d"):format(tostring(player), tostring(skillName), level or 1))
+end
+
+local function getLevel(player, skillName)
+	local p = skills[player.UserId]
+	return p and p[skillName] or 0
+end
+
+local function levelUp(player, skillName)
+	grant(player, skillName, getLevel(player, skillName) + 1)
+end
+
+return { Grant = grant, GetLevel = getLevel, LevelUp = levelUp }
+]=]
+			LOGIC.MusicSystem = [=[
+local function playSound(player, soundId, volume)
+	if player.Character then
+		local sound = Instance.new("Sound")
+		sound.SoundId = soundId
+		sound.Volume = volume or 0.5
+		sound.Parent = player.Character
+		sound:Play()
+		task.delay(sound.TimeLength, function() sound:Destroy() end)
+	end
+end
+
+return { Play = playSound }
+]=]
+			LOGIC.BadgeSystem = [=[
+local BadgeService = game:GetService("BadgeService")
+
+local function award(player, badgeId)
+	local ok, res = pcall(function()
+		return BadgeService:AwardBadge(player.UserId, badgeId)
+	end)
+	print(("[Badge] %s awarded %s (ok=%s)"):format(tostring(player), tostring(badgeId), tostring(ok and res or false)))
+end
+
+local function has(player, badgeId)
+	local ok, res = pcall(function()
+		return BadgeService:UserHasBadgeAsync(player.UserId, badgeId)
+	end)
+	return ok and res
+end
+
+return { Award = award, Has = has }
+]=]
+			LOGIC.InteractionSystem = [=[
+local function route(player, object, kind)
+	print(("[Interaction] %s triggered %s (%s)"):format(tostring(player), tostring(object.Name), tostring(kind)))
+end
+
+for _, item in ipairs(DETECTED) do
+	local object = game:FindFirstChild(item.path, true)
+	if object and object:IsA("ClickDetector") then
+		object.MouseClick:Connect(function(player) route(player, object, "ClickDetector") end)
+	elseif object and object:IsA("ProximityPrompt") then
+		object.Triggered:Connect(function(player) route(player, object, "ProximityPrompt") end)
+	end
+end
 ]=]
 
 			----------------------------------------------------------------
@@ -3499,18 +4086,37 @@ return {
 			end
 			table.insert(_fakeAll, genFolder)
 
-			_addFake("ModuleScript", "NPCManager", buildManager("NPCManager", systems.npc, npcMethods), genFolder)
-			_addFake("ModuleScript", "DoorManager", buildManager("DoorManager", systems.door, doorMethods), genFolder)
-			_addFake("ModuleScript", "ToolManager", buildManager("ToolManager", systems.tool, toolMethods), genFolder)
-			_addFake("ModuleScript", "SpawnManager", buildManager("SpawnManager", systems.spawn, spawnMethods), genFolder)
-			_addFake("ModuleScript", "InteractionManager", buildManager("InteractionManager", systems.interaction, interactionMethods), genFolder)
-			_addFake("Script", "GeneratedBootstrap", bootstrapSource, genFolder)
+			local systemsFolder = Instance.new("Folder")
+			systemsFolder.Name = "Systems"
+			systemsFolder.Archivable = true
+			systemsFolder.Parent = genFolder
+			table.insert(_fakeAll, systemsFolder)
+
+			local generatedCount = 0
+			for _, sys in ipairs(SYSTEMS) do
+				local items = {}
+				for _, listKey in ipairs(sys.lists or {}) do
+					for _, it in ipairs(detected[listKey] or {}) do
+						table.insert(items, it)
+					end
+				end
+				local matched = systemMatch[sys.name]
+				local scripts = matched and matched.scripts or {}
+				if #items > 0 or #scripts > 0 then
+					local logicLua = LOGIC[sys.name]
+					if logicLua then
+						local fname = sys.name .. "Server"
+						_addFake("Script", fname, buildSystemScript(sys.name, items, scripts, logicLua), systemsFolder)
+						generatedCount += 1
+					end
+				end
+			end
 
 			----------------------------------------------------------------
 			-- 5) EXPORT: fake instances are parented -> embedded in the save
 			----------------------------------------------------------------
 			if OPTIONS.ShowStatus and StatusText then
-				StatusText.Text = "Analyzer: " .. #detected.npc .. " NPC(s), " .. #detected.door .. " door(s), " .. #detected.tool .. " tool(s), " .. #detected.spawnLocation .. " spawn(s), " .. #detected.remote .. " remote(s)"
+				StatusText.Text = "Analyzer: " .. #detected.script .. " script(s) found, " .. generatedCount .. " server script(s) generated, " .. #detected.remote .. " remote(s)"
 			end
 		end)
 		if not generatorOk then
