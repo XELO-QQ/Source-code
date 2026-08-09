@@ -3420,17 +3420,32 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 			return profile
 		end
 
-		local function _buildServerReconstructionPlan(profile)
+		local function _buildServerReconstructionPlan(profile, root)
 			local generated = {}
 			local function addScript(className, scriptName, source, path)
 				if not scriptName or scriptName == "" then
 					return
 				end
+				local function scopePath(rawPath)
+					local scoped = rawPath or "ServerScriptService"
+					if scoped:find("^ServerScriptService/GeneratedRuntime/") then
+						scoped = scoped:gsub("^ServerScriptService/GeneratedRuntime/", "ServerScriptService/GeneratedRuntime/" .. profile.runtimeNamespace .. "/")
+					elseif scoped:find("^ServerScriptService/GeneratedSystems") then
+						scoped = scoped:gsub("^ServerScriptService/GeneratedSystems", "ServerScriptService/GeneratedRuntime/" .. profile.runtimeNamespace .. "/Systems")
+					elseif scoped:find("^ServerScriptService/GeneratedModules") then
+						scoped = scoped:gsub("^ServerScriptService/GeneratedModules", "ServerScriptService/GeneratedRuntime/" .. profile.runtimeNamespace .. "/Modules")
+					elseif scoped:find("^ServerScriptService/") then
+						scoped = scoped:gsub("^ServerScriptService/", "ServerScriptService/GeneratedRuntime/" .. profile.runtimeNamespace .. "/")
+					else
+						scoped = "ServerScriptService/GeneratedRuntime/" .. profile.runtimeNamespace .. "/" .. scoped
+					end
+					return scoped
+				end
 				table.insert(generated, {
 					className = className or "Script",
 					scriptName = scriptName,
 					source = source,
-					parentPath = path or "ServerScriptService",
+					parentPath = scopePath(path or "ServerScriptService/GeneratedRuntime/Systems"),
 				})
 			end
 
@@ -3438,6 +3453,39 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 				return "local " .. name .. " = {}\n" .. body .. "\nreturn " .. name .. "\n"
 			end
 
+			local function makeRuntimeNamespace()
+				local base = (root and root.Name) or "Game"
+				local parts = {base}
+				if profile and profile.gameType then
+					table.insert(parts, profile.gameType)
+				end
+				if profile and profile.systems then
+					local keys = {}
+					for key in pairs(profile.systems) do
+						table.insert(keys, key)
+					end
+					table.sort(keys)
+					for _, key in ipairs(keys) do
+						table.insert(parts, key)
+					end
+				end
+				local raw = table.concat(parts, "_")
+				raw = string.lower(raw)
+				raw = string.gsub(raw, "[^%w]+", "_")
+				raw = string.gsub(raw, "^_+", "")
+				raw = string.gsub(raw, "_+$", "")
+				if raw == "" then
+					raw = "game"
+				end
+				local hash = 0
+				for i = 1, #raw do
+					hash = hash + (string.byte(raw, i) * (i + 7))
+				end
+				return raw .. "_" .. tostring(hash % 100000)
+			end
+
+			profile.runtimeNamespace = profile.runtimeNamespace or makeRuntimeNamespace()
+			local runtimeNamespace = profile.runtimeNamespace
 			local gameKind = profile.gameType or "general"
 			local remoteBridgeSource = [[local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RemotesFolder = ReplicatedStorage:FindFirstChild("Remotes") or ReplicatedStorage
@@ -3865,7 +3913,7 @@ return true]], "ServerScriptService/GeneratedRuntime/Systems/Keyboard")
 		end
 
 		local _scanProfile = _scanGameArchitecture(game)
-		local _serverRebuildPlan = _buildServerReconstructionPlan(_scanProfile)
+		local _serverRebuildPlan = _buildServerReconstructionPlan(_scanProfile, game)
 		for _, entry in ipairs(_serverRebuildPlan) do
 			local targetParent = service.ServerScriptService
 			local pathParts = {}
@@ -3896,9 +3944,11 @@ return true]], "ServerScriptService/GeneratedRuntime/Systems/Keyboard")
 		----------------------------------------------------------------
 		local _SSS = service.ServerScriptService
 		local _GeneratedRoot = _ensureFolder(_SSS, "GeneratedRuntime")
-		local _GeneratedSystems = _ensureFolder(_GeneratedRoot, "Systems")
-		local _GeneratedModules = _ensureFolder(_GeneratedRoot, "Modules")
-		local _GeneratedCore = _ensureFolder(_GeneratedRoot, "Core")
+		local _RuntimeNamespace = (_scanProfile and _scanProfile.runtimeNamespace) or "GameRuntime_" .. tostring(math.floor(tick() * 1000) % 100000)
+		local _GameGeneratedRoot = _ensureFolder(_GeneratedRoot, _RuntimeNamespace)
+		local _GeneratedSystems = _ensureFolder(_GameGeneratedRoot, "Systems")
+		local _GeneratedModules = _ensureFolder(_GameGeneratedRoot, "Modules")
+		local _GeneratedCore = _ensureFolder(_GameGeneratedRoot, "Core")
 
 		_addFakeScript = function(cls, name, src, folderOverride)
 			local parent = folderOverride or _GeneratedSystems
