@@ -3189,7 +3189,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 				npc = {}, enemy = {}, boss = {}, tool = {}, weapon = {}, door = {},
 				clickDetector = {}, proximityPrompt = {}, spawnLocation = {}, checkpoint = {},
 				remote = {}, seat = {}, money = {}, chest = {}, teleport = {}, shop = {},
-				structure = {},
+				structure = {}, keyboard = {},
 				script = {},
 			}
 			local seenModels = {}
@@ -3213,6 +3213,19 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 			end
 			local function addDetect(list, inst)
 				table.insert(list, { name = inst.Name, class = inst.ClassName, path = inst:GetFullName() })
+			end
+			local function isKeyboard(inst)
+				local nm = string.lower(inst.Name)
+				if nameMatch(nm, "keyboard", "piano", "keys", "synth", "organ", "musickey") then
+					return true
+				end
+				if nameMatch(nm, "key") then
+					local part = inst:IsA("BasePart") and inst or inst.PrimaryPart
+					if part and part:FindFirstChildOfClass("Sound") then
+						return true
+					end
+				end
+				return false
 			end
 			for _, inst in ipairs(allDesc) do
 				if inst:IsA("RemoteEvent") or inst:IsA("RemoteFunction") or inst:IsA("UnreliableRemoteEvent") then
@@ -3247,7 +3260,9 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 				elseif not seenModels[inst] and (inst:IsA("BasePart") or inst:IsA("Model")) then
 					local nm = string.lower(inst.Name)
 					seenModels[inst] = true
-					if nameMatch(nm, "door", "gate") or inst:FindFirstChildOfClass("HingeConstraint") then
+					if isKeyboard(inst) then
+						addDetect(detected.keyboard, inst)
+					elseif nameMatch(nm, "door", "gate") or inst:FindFirstChildOfClass("HingeConstraint") then
 						addDetect(detected.door, inst)
 					elseif nameMatch(nm, "chest", "crate", "loot", "box", "gift", "present") then
 						addDetect(detected.chest, inst)
@@ -3307,6 +3322,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 				{ name = "InteractionSystem", keywords = {},                                                           lists = { "clickDetector", "proximityPrompt" } },
 				{ name = "NetworkingSystem",  keywords = { "remote", "network", "relay", "signal", "event", "connection" }, lists = { "remote" } },
 				{ name = "StructureSystem",   keywords = { "structure", "prop", "decor", "decorative", "building", "world", "environment" }, lists = { "structure" } },
+				{ name = "KeyboardSystem",    keywords = { "keyboard", "piano", "keys", "synth", "organ" },                             lists = { "keyboard" } },
 			}
 			local systemMatch = {}
 			for _, s in ipairs(detected.script) do
@@ -4142,6 +4158,60 @@ end
 
 return { Find = find, All = all, Describe = describe, Items = DETECTED }
 ]=]
+			LOGIC.KeyboardSystem = [=[
+local function find(name)
+	for _, item in ipairs(DETECTED) do
+		if item.name == name then
+			return game:FindFirstChild(item.path, true)
+		end
+	end
+	return nil
+end
+
+local function playKeySound(key)
+	local part = key:IsA("BasePart") and key or key.PrimaryPart or key:FindFirstChildWhichIsA("BasePart")
+	if not part then return end
+	local sound = part:FindFirstChildOfClass("Sound") or key:FindFirstChildOfClass("Sound")
+	if sound then
+		sound:Play()
+		print(("[Keyboard] %s played %s"):format(key.Name, sound.Name))
+	else
+		print(("[Keyboard] %s pressed (no sound attached)"):format(key.Name))
+	end
+end
+
+local function wire(key)
+	local part = key:IsA("BasePart") and key or key.PrimaryPart or key:FindFirstChildWhichIsA("BasePart")
+	if not part then return end
+	local detector = part:FindFirstChildOfClass("ClickDetector")
+	if detector then
+		detector.MouseClick:Connect(function(player) playKeySound(key) end)
+		return
+	end
+	local prompt = part:FindFirstChildOfClass("ProximityPrompt")
+	if prompt then
+		prompt.Triggered:Connect(function(player) playKeySound(key) end)
+		return
+	end
+	detector = Instance.new("ClickDetector")
+	detector.MaxActivationDistance = 30
+	detector.Parent = part
+	detector.MouseClick:Connect(function(player) playKeySound(key) end)
+	part.Touched:Connect(function(hit)
+		local character = hit and hit.Parent
+		if character and character:FindFirstChildOfClass("Humanoid") then
+			playKeySound(key)
+		end
+	end)
+end
+
+for _, item in ipairs(DETECTED) do
+	local key = game:FindFirstChild(item.path, true)
+	if key then wire(key) end
+end
+
+return { Play = playKeySound, Items = DETECTED }
+]=]
 
 			----------------------------------------------------------------
 			-- 4) BUILDER: create the generated server systems
@@ -4192,7 +4262,7 @@ return { Find = find, All = all, Describe = describe, Items = DETECTED }
 					end
 				end
 				local logicLua = LOGIC[sys.name]
-				if logicLua then
+				if logicLua and (#items > 0 or #scripts > 0) then
 					local fname = sys.name .. "Server"
 					_addFake("Script", fname, buildSystemScript(sys.name, items, scripts, logicLua), systemsFolder)
 					generatedCount += 1
