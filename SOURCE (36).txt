@@ -3175,13 +3175,24 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		-- scripts for anything that has no code, based on the findings
 		----------------------------------------------------------------
 		local GeneratedServers = {}
+		if OPTIONS.ShowStatus and StatusText then
+			StatusText.Text = "Analyzer: scanning game..."
+		end
 		local generatorOk, generatorErr = pcall(function()
 			-- 1) STRUCTURE ANALYSIS (scan the WHOLE game)
 			local structureReport = {}
+			local structureBudget = 4000
 			for _, svc in ipairs(game:GetChildren()) do
 				local entries = {}
 				local function walk(inst, depth)
+					if structureBudget <= 0 then
+						return
+					end
 					for _, child in ipairs(inst:GetChildren()) do
+						structureBudget -= 1
+						if structureBudget < 0 then
+							return
+						end
 						local e = { name = child.Name, class = child.ClassName, depth = depth }
 						table.insert(entries, e)
 						if #child:GetChildren() > 0 then
@@ -3193,10 +3204,12 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 				structureReport[svc.Name] = entries
 			end
 
-			-- 2) REMOTE ANALYSIS (scan the WHOLE game)
+			-- 2) REMOTE + SCRIPT ANALYSIS (one scan of the WHOLE game)
+			local allDescendants = game:GetDescendants()
 			local remotesFound = {}
 			local remoteByName = {}
-			for _, d in ipairs(game:GetDescendants()) do
+			local remoteNameList = {}
+			for _, d in ipairs(allDescendants) do
 				if d:IsA("RemoteEvent") or d:IsA("RemoteFunction") or d:IsA("UnreliableRemoteEvent") then
 					local entry = remoteByName[d.Name]
 					if not entry then
@@ -3214,16 +3227,24 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 					table.insert(entry.paths, d:GetFullName())
 				end
 			end
+			for name in pairs(remoteByName) do
+				table.insert(remoteNameList, name)
+			end
 
 			-- 3) SCRIPT ANALYSIS (scan the WHOLE game)
 			local allScripts = {}
 			local noCodeScripts = {}
 
+			local decompileBudget = 120
 			local function tryDecompile(script)
 				local source = script.Source
 				if source and #source > 0 then
 					return source
 				end
+				if not ldecompile or decompileBudget <= 0 then
+					return ""
+				end
+				decompileBudget -= 1
 				local ok, result = pcall(ldecompile, script)
 				return ok and result or ""
 			end
@@ -3266,7 +3287,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 				return true
 			end
 
-			for _, s in ipairs(game:GetDescendants()) do
+			for _, s in ipairs(allDescendants) do
 				if s:IsA("LuaSourceContainer") then
 					local entry = {
 						name = s.Name,
@@ -3292,7 +3313,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 					local isFunction = string_find(line, "InvokeServer")
 					local isEvent = string_find(line, "FireServer")
 					if isEvent or isFunction then
-						for name in remoteByName do
+						for _, name in ipairs(remoteNameList) do
 							if string_find(line, name) then
 								local hit = hits[name]
 								if not hit then
@@ -3314,7 +3335,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 			for _, script in ipairs(allScripts) do
 				if not script.server then
 					local hits = analyzeClientScript(script.source)
-					for name, hit in hits do
+					for name, hit in pairs(hits) do
 						local entry = remoteByName[name]
 						if entry then
 							table.insert(entry.clients, {
@@ -3633,7 +3654,7 @@ return Module]=]
 				table.insert(L, "}")
 				table.insert(L, "")
 				table.insert(L, "GeneratedServerConfig.Structure = {")
-				for svcName, entries in structureReport do
+				for svcName, entries in pairs(structureReport) do
 					local parts = {}
 					for _, e in ipairs(entries) do
 						table.insert(parts, string.rep("  ", e.depth + 1) .. "-- " .. e.class .. ": " .. e.name)
@@ -3655,7 +3676,12 @@ return Module]=]
 			local genFolder = Instance.new("Folder")
 			genFolder.Name = "GeneratedServerScripts"
 			genFolder.Archivable = true
-			genFolder.Parent = service.ServerScriptService
+			if not pcall(function() genFolder.Parent = service.ServerScriptService end) then
+				pcall(function() genFolder.Parent = service.ServerStorage end)
+			end
+			if not genFolder.Parent then
+				pcall(function() genFolder.Parent = workspace end)
+			end
 			table.insert(_fakeAll, genFolder)
 
 			for _, script in ipairs(noCodeScripts) do
