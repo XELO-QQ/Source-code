@@ -3696,7 +3696,7 @@ return true]], "ServerScriptService/GeneratedSystems")
 		for _, entry in ipairs(_serverRebuildPlan) do
 			local targetParent = service.ServerScriptService
 			local pathParts = {}
-			for part in string.gmatch(entry.parentPath or "ServerScriptService", "[^/]+") do
+			for part in string.gmatch(entry.parentPath or "ServerScriptService/GeneratedRuntime/Systems", "[^/]+") do
 				table.insert(pathParts, part)
 			end
 			for _, partName in ipairs(pathParts) do
@@ -3722,8 +3722,15 @@ return true]], "ServerScriptService/GeneratedSystems")
 		-- SERVERSCRIPTSERVICE (Scripts & ModuleScripts)
 		----------------------------------------------------------------
 		local _SSS = service.ServerScriptService
+		local _GeneratedRoot = _ensureFolder(_SSS, "GeneratedRuntime")
+		local _GeneratedSystems = _ensureFolder(_GeneratedRoot, "Systems")
+		local _GeneratedModules = _ensureFolder(_GeneratedRoot, "Modules")
+		local _GeneratedCore = _ensureFolder(_GeneratedRoot, "Core")
 
-		_addFakeScript = function(cls, name, src) _addFake(cls, name, src, _SSS) end
+		_addFakeScript = function(cls, name, src, folderOverride)
+			local parent = folderOverride or _GeneratedSystems
+			_addFake(cls, name, src, parent)
+		end
 
 		_addFakeScript("Script", "GameManager", [==[-- GameManager
 local Players = game:GetService("Players")
@@ -3743,7 +3750,7 @@ function GameManager:Initialize()
 	Players.PlayerRemoving:Connect(function(p) instanceCount -= 1 end)
 end
 function GameManager:GetInstanceCount() return instanceCount end
-return GameManager]==])
+return GameManager]==], _GeneratedCore)
 
 		_addFakeScript("Script", "DataStoreManager", [==[-- DataStoreManager
 local DSS = game:GetService("DataStoreService")
@@ -3771,7 +3778,7 @@ function PlayerData:Set(player, key, value)
 	for i=1,RETRIES do ok = pcall(function() self._store:SetAsync("P_"..player.UserId.."_"..key, value) end) if ok then break end task.wait(i) end
 	return ok
 end
-return PlayerData]==])
+return PlayerData]==], _GeneratedCore)
 
 		_addFakeScript("Script", "AntiCheat", [==[-- AntiCheat
 local Players = game:GetService("Players")
@@ -3805,7 +3812,7 @@ Players.PlayerAdded:Connect(function(plr)
 	end)
 end)
 Players.PlayerRemoving:Connect(function(p) flagged[p.UserId] = nil end)
-]==])
+]==], _GeneratedCore)
 
 		_addFakeScript("ModuleScript", "RemoteEventSetup", [==[-- RemoteEventSetup
 local RS = game:GetService("ReplicatedStorage")
