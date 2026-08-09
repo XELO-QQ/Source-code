@@ -3189,6 +3189,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 				npc = {}, enemy = {}, boss = {}, tool = {}, weapon = {}, door = {},
 				clickDetector = {}, proximityPrompt = {}, spawnLocation = {}, checkpoint = {},
 				remote = {}, seat = {}, money = {}, chest = {}, teleport = {}, shop = {},
+				structure = {},
 				script = {},
 			}
 			local seenModels = {}
@@ -3256,6 +3257,8 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 						addDetect(detected.checkpoint, inst)
 					elseif nameMatch(nm, "coin", "money", "gold", "cash", "bank", "gem", "dollar", "cashregister") then
 						addDetect(detected.money, inst)
+					else
+						addDetect(detected.structure, inst)
 					end
 				end
 			end
@@ -3302,6 +3305,8 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 				{ name = "NotificationSystem",keywords = { "notification", "message", "mail", "announcement", "broadcast", "chat" }, lists = {} },
 				{ name = "TutorialSystem",    keywords = { "tutorial", "guide", "hint", "tips" },                      lists = {} },
 				{ name = "InteractionSystem", keywords = {},                                                           lists = { "clickDetector", "proximityPrompt" } },
+				{ name = "NetworkingSystem",  keywords = { "remote", "network", "relay", "signal", "event", "connection" }, lists = { "remote" } },
+				{ name = "StructureSystem",   keywords = { "structure", "prop", "decor", "decorative", "building", "world", "environment" }, lists = { "structure" } },
 			}
 			local systemMatch = {}
 			for _, s in ipairs(detected.script) do
@@ -4071,6 +4076,72 @@ for _, item in ipairs(DETECTED) do
 	end
 end
 ]=]
+			LOGIC.NetworkingSystem = [=[
+local handlers = {}
+
+local function bind(remoteName, handler)
+	for _, item in ipairs(DETECTED) do
+		if item.name == remoteName then
+			local remote = game:FindFirstChild(item.path, true)
+			if remote then
+				if remote:IsA("RemoteFunction") then
+					remote.OnServerInvoke = function(player, ...)
+						if handler then return handler(player, ...) end
+						return nil
+					end
+				else
+					remote.OnServerEvent:Connect(function(player, ...)
+						if handler then handler(player, ...) end
+					end)
+				end
+			end
+			return remote ~= nil
+		end
+	end
+	return false
+end
+
+for _, item in ipairs(DETECTED) do
+	local remote = game:FindFirstChild(item.path, true)
+	if remote then
+		local name = item.name
+		handlers[name] = handlers[name] or function(player, ...)
+			print(("[Net] %s fired %s"):format(tostring(player), tostring(name)))
+		end
+		bind(name, handlers[name])
+	end
+end
+
+return { Bind = bind, Handlers = handlers, Items = DETECTED }
+]=]
+			LOGIC.StructureSystem = [=[
+local function find(name)
+	for _, item in ipairs(DETECTED) do
+		if item.name == name then
+			return game:FindFirstChild(item.path, true)
+		end
+	end
+	return nil
+end
+
+local function all()
+	local out = {}
+	for _, item in ipairs(DETECTED) do
+		local inst = game:FindFirstChild(item.path, true)
+		if inst then table.insert(out, inst) end
+	end
+	return out
+end
+
+local function describe(inst)
+	if inst:IsA("BasePart") then
+		return inst.Name .. " (" .. inst.ClassName .. ") @ " .. tostring(inst.Position)
+	end
+	return inst.Name .. " (" .. inst.ClassName .. ")"
+end
+
+return { Find = find, All = all, Describe = describe, Items = DETECTED }
+]=]
 
 			----------------------------------------------------------------
 			-- 4) BUILDER: create the generated server systems
@@ -4092,6 +4163,19 @@ end
 			systemsFolder.Parent = genFolder
 			table.insert(_fakeAll, systemsFolder)
 
+			local unmatchedScripts = {}
+			local matchedPaths = {}
+			for _, m in pairs(systemMatch) do
+				for _, s in ipairs(m.scripts) do
+					matchedPaths[s.path] = true
+				end
+			end
+			for _, s in ipairs(detected.script) do
+				if not matchedPaths[s.path] then
+					table.insert(unmatchedScripts, { name = s.name, class = s.class, path = s.path })
+				end
+			end
+
 			local generatedCount = 0
 			for _, sys in ipairs(SYSTEMS) do
 				local items = {}
@@ -4102,13 +4186,16 @@ end
 				end
 				local matched = systemMatch[sys.name]
 				local scripts = matched and matched.scripts or {}
-				if #items > 0 or #scripts > 0 then
-					local logicLua = LOGIC[sys.name]
-					if logicLua then
-						local fname = sys.name .. "Server"
-						_addFake("Script", fname, buildSystemScript(sys.name, items, scripts, logicLua), systemsFolder)
-						generatedCount += 1
+				if sys.name == "StructureSystem" then
+					for _, us in ipairs(unmatchedScripts) do
+						table.insert(scripts, us)
 					end
+				end
+				local logicLua = LOGIC[sys.name]
+				if logicLua then
+					local fname = sys.name .. "Server"
+					_addFake("Script", fname, buildSystemScript(sys.name, items, scripts, logicLua), systemsFolder)
+					generatedCount += 1
 				end
 			end
 
