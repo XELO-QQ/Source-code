@@ -3451,33 +3451,37 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 
 			local function makeRuntimeNamespace()
 				local base = (root and root.Name) or "Game"
-				local parts = {base}
-				if profile and profile.gameType then
-					table.insert(parts, profile.gameType)
+				base = string.lower(tostring(base))
+				base = string.gsub(base, "[^%w]+", "_")
+				base = string.gsub(base, "^_+", "")
+				base = string.gsub(base, "_+$", "")
+				if base == "" then
+					base = "game"
 				end
-				if profile and profile.systems then
-					local keys = {}
-					for key in pairs(profile.systems) do
-						table.insert(keys, key)
-					end
-					table.sort(keys)
-					for _, key in ipairs(keys) do
-						table.insert(parts, key)
-					end
+				local gameType = profile and profile.gameType and tostring(profile.gameType) or "general"
+				gameType = string.lower(gameType)
+				gameType = string.gsub(gameType, "[^%w]+", "_")
+				gameType = string.gsub(gameType, "^_+", "")
+				gameType = string.gsub(gameType, "_+$", "")
+				if gameType == "" then
+					gameType = "general"
 				end
-				local raw = table.concat(parts, "_")
-				raw = string.lower(raw)
+				local raw = base .. "_" .. gameType
 				raw = string.gsub(raw, "[^%w]+", "_")
 				raw = string.gsub(raw, "^_+", "")
 				raw = string.gsub(raw, "_+$", "")
 				if raw == "" then
 					raw = "game"
 				end
+				if #raw > 24 then
+					raw = string.sub(raw, 1, 24)
+					raw = string.gsub(raw, "_+$", "")
+				end
 				local hash = 0
 				for i = 1, #raw do
 					hash = hash + (string.byte(raw, i) * (i + 7))
 				end
-				return raw .. "_" .. tostring(hash % 100000)
+				return raw .. "_" .. tostring(hash % 10000)
 			end
 
 			profile.runtimeNamespace = profile.runtimeNamespace or makeRuntimeNamespace()
