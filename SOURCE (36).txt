@@ -3373,6 +3373,17 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 				table.insert(L, "\treturn current")
 				table.insert(L, "end")
 				table.insert(L, "")
+				table.insert(L, "local function resolve(path, tries, delay)")
+				table.insert(L, "\ttries = tries or 8")
+				table.insert(L, "\tdelay = delay or 0.1")
+				table.insert(L, "\tfor i = 1, tries do")
+				table.insert(L, "\t\tlocal obj = findItem(path)")
+				table.insert(L, "\t\tif obj then return obj end")
+				table.insert(L, "\t\ttask.wait(delay)")
+				table.insert(L, "\tend")
+				table.insert(L, "\treturn nil")
+				table.insert(L, "end")
+				table.insert(L, "")
 				table.insert(L, logicLua)
 				return table.concat(L, "\n")
 			end
@@ -3422,17 +3433,17 @@ end
 return { Talk = Talk, SetSpeed = SetSpeed, Respawn = Respawn, Items = DETECTED }
 ]=]
 			LOGIC.DoorSystem = [=[
-local function find(name)
+local debounce = {}
+local closeTasks = {}
+
+local function byName(name)
 	for _, item in ipairs(DETECTED) do
-		if item.name == name then
-			return findItem(item.path)
-		end
+		if item.name == name then return resolve(item.path) end
 	end
 	return nil
 end
 
-function SetOpen(door, open)
-	door = type(door) == "string" and find(door) or door
+local function setOpen(door, open)
 	if not door then return false end
 	local hinge = door:FindFirstChildOfClass("HingeConstraint")
 	if hinge then
@@ -3442,32 +3453,46 @@ function SetOpen(door, open)
 		return true
 	end
 	local part = door:IsA("BasePart") and door or door.PrimaryPart
-	if part then part:SetAttribute("Open", open) end
-	return true
+	if part then
+		part:SetAttribute("Open", open)
+		return true
+	end
+	return false
+end
+
+function SetOpen(door, open)
+	door = type(door) == "string" and byName(door) or door
+	return setOpen(door, open)
 end
 
 function Toggle(door)
-	door = type(door) == "string" and find(door) or door
+	door = type(door) == "string" and byName(door) or door
 	if not door then return false end
 	local open = door:GetAttribute("Open")
-	SetOpen(door, not open)
+	setOpen(door, not open)
 	return not open
 end
 
 for _, item in ipairs(DETECTED) do
-	local door = findItem(item.path)
-	if door then
+	task.spawn(function()
+		local door = resolve(item.path)
+		if not door then return end
 		local part = door:IsA("BasePart") and door or door.PrimaryPart
-		if part then
-			part.Touched:Connect(function(hit)
-				local character = hit and hit.Parent
-				if character and character:FindFirstChildOfClass("Humanoid") then
-					SetOpen(door, true)
-					task.delay(3, function() SetOpen(door, false) end)
-				end
+		if not part then return end
+		part.Touched:Connect(function(hit)
+			local character = hit and hit.Parent
+			if not character or not character:FindFirstChildOfClass("Humanoid") then return end
+			local now = os.clock()
+			if debounce[door] and now - debounce[door] < 0.4 then return end
+			debounce[door] = now
+			if closeTasks[door] then task.cancel(closeTasks[door]) end
+			setOpen(door, true)
+			closeTasks[door] = task.delay(3, function()
+				setOpen(door, false)
+				closeTasks[door] = nil
 			end)
-		end
-	end
+		end)
+	end)
 end
 
 return { SetOpen = SetOpen, Toggle = Toggle, Items = DETECTED }
@@ -3528,74 +3553,99 @@ end
 return { Buy = Buy, Items = DETECTED }
 ]=]
 			LOGIC.CombatSystem = [=[
+local Players = game:GetService("Players")
 local cooldowns = {}
 
 local function damage(victim, amount, attacker)
-	if not victim or not victim:FindFirstChildOfClass("Humanoid") then return end
-	victim:FindFirstChildOfClass("Humanoid"):TakeDamage(amount)
-	print(("[Combat] %s hit %s for %d"):format(tostring(attacker), victim.Name, amount))
+	if not victim then return end
+	local hum = victim:FindFirstChildOfClass("Humanoid")
+	if not hum then return end
+	hum:TakeDamage(amount)
+	print(("[Combat] %s hit %s for %d"):format(tostring(attacker and attacker.Name or "?"), victim.Name, amount))
+end
+
+local function findEnemies()
+	local list = {}
+	for _, eitem in ipairs(DETECTED) do
+		local e = resolve(eitem.path)
+		if e and e:FindFirstChildOfClass("Humanoid") then
+			table.insert(list, e)
+		end
+	end
+	return list
 end
 
 for _, item in ipairs(DETECTED) do
-	local weapon = findItem(item.path)
-	if weapon and weapon:IsA("Tool") then
+	task.spawn(function()
+		local weapon = resolve(item.path)
+		if not weapon or not weapon:IsA("Tool") then return end
 		weapon.Activated:Connect(function()
-			local Players = game:GetService("Players")
 			local player = Players:GetPlayerFromCharacter(weapon.Parent)
 			local root = weapon.Parent and weapon.Parent:FindFirstChild("HumanoidRootPart")
 			if not player or not root then return end
 			local now = os.clock()
 			if cooldowns[player.UserId] and now - cooldowns[player.UserId] < 0.6 then return end
 			cooldowns[player.UserId] = now
-			for _, eitem in ipairs(DETECTED) do
-				local e = game:FindFirstChild(eitem.path, true)
-				if e and e:FindFirstChildOfClass("Humanoid") then
-					local eroot = e:FindFirstChild("HumanoidRootPart")
-					if eroot and (eroot.Position - root.Position).Magnitude < 12 then
-						damage(e, 20, weapon.Parent)
-					end
+			for _, e in ipairs(findEnemies()) do
+				local eroot = e:FindFirstChild("HumanoidRootPart")
+				if eroot and (eroot.Position - root.Position).Magnitude < 12 then
+					damage(e, 20, weapon.Parent)
 				end
 			end
 		end)
-	end
+	end)
 end
 
-return { Damage = damage }
+return { Damage = damage, Items = DETECTED }
 ]=]
 			LOGIC.LootSystem = [=[
 local Players = game:GetService("Players")
+local cooldown = {}
 
-local function openLoot(player, obj)
-	if obj:GetAttribute("Opened") then return end
-	obj:SetAttribute("Opened", true)
+local function giveRandomTool(player)
 	local backpack = player:FindFirstChildOfClass("Backpack")
+	if not backpack then return false end
 	for _, item in ipairs(DETECTED) do
-		local tool = findItem(item.path)
+		local tool = resolve(item.path)
 		if tool and tool:IsA("Tool") then
-			tool:Clone().Parent = backpack or player
-			break
+			tool:Clone().Parent = backpack
+			return true
 		end
 	end
+	return false
+end
+
+local function openLoot(player, obj)
+	if not player or not obj then return end
+	if obj:GetAttribute("Opened") then return end
+	local now = os.clock()
+	if cooldown[player.UserId] and now - cooldown[player.UserId] < 0.3 then return end
+	cooldown[player.UserId] = now
+	obj:SetAttribute("Opened", true)
+	giveRandomTool(player)
 	print(("[Loot] %s opened %s"):format(tostring(player), obj.Name))
 end
 
 for _, item in ipairs(DETECTED) do
-	local obj = findItem(item.path)
-	if not obj then
-		continue
-	end
-	local part = obj:IsA("BasePart") and obj or obj.PrimaryPart
-	local detector = obj:FindFirstChildOfClass("ClickDetector")
-	if detector then
-		detector.MouseClick:Connect(function(player) openLoot(player, obj) end)
-	elseif part then
-		part.Touched:Connect(function(hit)
-			local character = hit and hit.Parent
-			local player = character and Players:GetPlayerFromCharacter(character)
-			if player then openLoot(player, obj) end
-		end)
-	end
+	task.spawn(function()
+		local obj = resolve(item.path)
+		if not obj then return end
+		local part = obj:IsA("BasePart") and obj or obj.PrimaryPart
+		local detector = obj:FindFirstChildOfClass("ClickDetector")
+		if detector then
+			detector.MouseClick:Connect(function(player) openLoot(player, obj) end)
+		elseif part then
+			part.Touched:Connect(function(hit)
+				local character = hit and hit.Parent
+				local player = character and Players:GetPlayerFromCharacter(character)
+				if player then openLoot(player, obj) end
+			end)
+		end
+	end)
 end
+
+return { Open = openLoot, GiveTool = giveRandomTool, Items = DETECTED }
+]=]
 ]=]
 			LOGIC.TeleportSystem = [=[
 local Players = game:GetService("Players")
@@ -4167,60 +4217,141 @@ end
 return { Find = find, All = all, Describe = describe, Items = DETECTED }
 ]=]
 			LOGIC.KeyboardSystem = [=[
-local function find(name)
-	for _, item in ipairs(DETECTED) do
-		if item.name == name then
-			return findItem(item.path)
-		end
+--[[
+	KeyboardSystem — server-side engine for ASMR / keyboard-escape keys.
+	Robust behaviour:
+	  * resolves each key by path, retries if the object isn't loaded yet
+	  * plays the key's Sound (looks in the key first, then a sibling Sounds folder)
+	  * animates the key press (down/up) for visual feedback
+	  * wires ClickDetector, ProximityPrompt AND Touched (walking) — debounced
+	  * dedupes repeated touches from the same character
+	  * resilient to one bad key breaking the whole system
+]]
+
+local Players = game:GetService("Players")
+
+local COOLDOWN = 0.14
+local PRESS_DEPTH = 0.22
+local PRESS_TIME = 0.08
+local MAX_ACTIVATION = 32
+local RESOLVE_ATTEMPTS = 10
+local RESOLVE_DELAY = 0.1
+
+local pressTimers = {}
+local seenTouch = {}
+
+local function getPart(obj)
+	if obj:IsA("BasePart") then return obj end
+	if obj.PrimaryPart then return obj.PrimaryPart end
+	return obj:FindFirstChildWhichIsA("BasePart")
+end
+
+local function findSoundIn(part)
+	return part:FindFirstChildOfClass("Sound")
+end
+
+local function resolveKey(path)
+	local obj
+	for i = 1, RESOLVE_ATTEMPTS do
+		obj = findItem(path)
+		if obj then return obj end
+		task.wait(RESOLVE_DELAY)
 	end
 	return nil
 end
 
-local lastPress = {}
-
-local function playKeySound(key)
-	local now = os.clock()
-	if lastPress[key] and now - lastPress[key] < 0.12 then return end
-	lastPress[key] = now
-	local part = key:IsA("BasePart") and key or key.PrimaryPart or key:FindFirstChildWhichIsA("BasePart")
-	if not part then return end
-	local sound = part:FindFirstChildOfClass("Sound") or key:FindFirstChildOfClass("Sound")
-	if sound then
-		pcall(function() sound:Play() end)
-		print(("[Keyboard] %s played %s"):format(key.Name, sound.Name))
-	else
-		print(("[Keyboard] %s pressed (no sound attached)"):format(key.Name))
+local function findKeySound(obj, part)
+	local s = findSoundIn(part) or findSoundIn(obj)
+	if s then return s end
+	local parent = obj.Parent
+	if parent then
+		local folder = parent:FindFirstChild("Sounds") or parent:FindFirstChild("Soundboard") or parent:FindFirstChild("Audio")
+		if folder then
+			return folder:FindFirstChild(obj.Name) or folder:FindFirstChildOfClass("Sound")
+		end
+		local sound = parent:FindFirstChildOfClass("Sound")
+		if sound then return sound end
 	end
+	return nil
 end
 
-local function wire(key)
-	local part = key:IsA("BasePart") and key or key.PrimaryPart or key:FindFirstChildWhichIsA("BasePart")
-	if not part then return end
-	local detector = part:FindFirstChildOfClass("ClickDetector")
-	if not detector then
-		detector = Instance.new("ClickDetector")
-		detector.MaxActivationDistance = 30
-		detector.Parent = part
-	end
-	detector.MouseClick:Connect(function(player) pcall(playKeySound, key) end)
-	local prompt = part:FindFirstChildOfClass("ProximityPrompt")
-	if prompt then
-		prompt.Triggered:Connect(function(player) pcall(playKeySound, key) end)
-	end
-	part.Touched:Connect(function(hit)
-		local character = hit and hit.Parent
-		if character and character:FindFirstChildOfClass("Humanoid") then
-			pcall(playKeySound, key)
-		end
+local function animatePress(part)
+	if not part.Anchored then return end
+	local origin = part.CFrame
+	local pressed = origin * CFrame.new(0, -PRESS_DEPTH, 0)
+	pcall(function()
+		part.CFrame = pressed
+		task.wait(PRESS_TIME)
+		part.CFrame = origin
 	end)
 end
 
-for _, item in ipairs(DETECTED) do
-	local key = findItem(item.path)
-	if key then pcall(wire, key) end
+local function triggerKey(obj)
+	if not obj then return end
+	local now = os.clock()
+	local last = pressTimers[obj]
+	if last and now - last < COOLDOWN then return end
+	pressTimers[obj] = now
+
+	local part = getPart(obj)
+	local sound = findKeySound(obj, part)
+	if sound then
+		pcall(function() sound:Play() end)
+		print(("[Keyboard] %s played %s"):format(obj.Name, sound.Name))
+	else
+		print(("[Keyboard] %s pressed"):format(obj.Name))
+	end
+
+	if part then
+		task.spawn(animatePress, part)
+	end
 end
 
-return { Play = playKeySound, Items = DETECTED }
+local function makeClickable(part)
+	if part:FindFirstChildOfClass("ClickDetector") then return end
+	pcall(function()
+		local d = Instance.new("ClickDetector")
+		d.MaxActivationDistance = MAX_ACTIVATION
+		d.Parent = part
+	end)
+end
+
+local function setupKey(key)
+	local obj = resolveKey(key.path)
+	if not obj then return end
+	local part = getPart(obj)
+	if not part then return end
+
+	makeClickable(part)
+
+	local detector = part:FindFirstChildOfClass("ClickDetector")
+	if detector then
+		detector.MouseClick:Connect(function(player) triggerKey(obj) end)
+	end
+
+	local prompt = part:FindFirstChildOfClass("ProximityPrompt")
+	if prompt then
+		prompt.Triggered:Connect(function(player) triggerKey(obj) end)
+	end
+
+	local myTouch = {}
+	seenTouch[obj] = myTouch
+	part.Touched:Connect(function(hit)
+		local char = hit and hit.Parent
+		if not char then return end
+		if not char:FindFirstChildOfClass("Humanoid") then return end
+		if myTouch[char] then return end
+		myTouch[char] = true
+		triggerKey(obj)
+		task.delay(COOLDOWN * 2, function() myTouch[char] = nil end)
+	end)
+end
+
+for _, key in ipairs(DETECTED) do
+	task.spawn(function() pcall(setupKey, key) end)
+end
+
+return { Trigger = triggerKey, Items = DETECTED }
 ]=]
 
 			----------------------------------------------------------------
