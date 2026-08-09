@@ -3374,7 +3374,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 				table.insert(L, "end")
 				table.insert(L, "")
 				table.insert(L, "local function resolve(path, tries, delay)")
-				table.insert(L, "\ttries = tries or 8")
+				table.insert(L, "\ttries = tries or 30")
 				table.insert(L, "\tdelay = delay or 0.1")
 				table.insert(L, "\tfor i = 1, tries do")
 				table.insert(L, "\t\tlocal obj = findItem(path)")
@@ -3383,6 +3383,9 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 				table.insert(L, "\tend")
 				table.insert(L, "\treturn nil")
 				table.insert(L, "end")
+				table.insert(L, "")
+				table.insert(L, "if not game:IsLoaded() then game.Loaded:Wait() end")
+				table.insert(L, "task.wait(0.3)")
 				table.insert(L, "")
 				table.insert(L, logicLua)
 				return table.concat(L, "\n")
@@ -4217,28 +4220,15 @@ end
 return { Find = find, All = all, Describe = describe, Items = DETECTED }
 ]=]
 			LOGIC.KeyboardSystem = [=[
---[[
-	KeyboardSystem — server-side engine for ASMR / keyboard-escape keys.
-	Robust behaviour:
-	  * resolves each key by path, retries if the object isn't loaded yet
-	  * plays the key's Sound (looks in the key first, then a sibling Sounds folder)
-	  * animates the key press (down/up) for visual feedback
-	  * wires ClickDetector, ProximityPrompt AND Touched (walking) — debounced
-	  * dedupes repeated touches from the same character
-	  * resilient to one bad key breaking the whole system
-]]
-
 local Players = game:GetService("Players")
 
-local COOLDOWN = 0.14
-local PRESS_DEPTH = 0.22
-local PRESS_TIME = 0.08
-local MAX_ACTIVATION = 32
-local RESOLVE_ATTEMPTS = 10
-local RESOLVE_DELAY = 0.1
+local COOLDOWN = 0.16
+local PRESS_DEPTH = 0.3
+local PRESS_TIME = 0.09
+local MAX_ACTIVATION = 40
 
-local pressTimers = {}
-local seenTouch = {}
+local pressTimer = {}
+local onKey = {}
 
 local function getPart(obj)
 	if obj:IsA("BasePart") then return obj end
@@ -4246,104 +4236,82 @@ local function getPart(obj)
 	return obj:FindFirstChildWhichIsA("BasePart")
 end
 
-local function findSoundIn(part)
-	return part:FindFirstChildOfClass("Sound")
-end
-
-local function resolveKey(path)
-	local obj
-	for i = 1, RESOLVE_ATTEMPTS do
-		obj = findItem(path)
-		if obj then return obj end
-		task.wait(RESOLVE_DELAY)
-	end
-	return nil
-end
-
 local function findKeySound(obj, part)
-	local s = findSoundIn(part) or findSoundIn(obj)
+	local s = part:FindFirstChildOfClass("Sound") or obj:FindFirstChildOfClass("Sound")
 	if s then return s end
-	local parent = obj.Parent
-	if parent then
-		local folder = parent:FindFirstChild("Sounds") or parent:FindFirstChild("Soundboard") or parent:FindFirstChild("Audio")
+	local p = obj.Parent
+	if p then
+		local folder = p:FindFirstChild("Sounds") or p:FindFirstChild("Soundboard") or p:FindFirstChild("Audio")
 		if folder then
 			return folder:FindFirstChild(obj.Name) or folder:FindFirstChildOfClass("Sound")
 		end
-		local sound = parent:FindFirstChildOfClass("Sound")
-		if sound then return sound end
+		return p:FindFirstChildOfClass("Sound")
 	end
 	return nil
 end
 
-local function animatePress(part)
-	if not part.Anchored then return end
+local function pressAnimation(part)
+	if not part or not part.Anchored then return end
 	local origin = part.CFrame
-	local pressed = origin * CFrame.new(0, -PRESS_DEPTH, 0)
+	local down = origin * CFrame.new(0, -PRESS_DEPTH, 0)
+	local originalColor = part.Color
 	pcall(function()
-		part.CFrame = pressed
+		part.CFrame = down
+		part.Color = originalColor:Lerp(Color3.new(0.2, 1, 0.4), 0.6)
 		task.wait(PRESS_TIME)
 		part.CFrame = origin
+		part.Color = originalColor
 	end)
 end
 
 local function triggerKey(obj)
 	if not obj then return end
 	local now = os.clock()
-	local last = pressTimers[obj]
+	local last = pressTimer[obj]
 	if last and now - last < COOLDOWN then return end
-	pressTimers[obj] = now
+	pressTimer[obj] = now
 
 	local part = getPart(obj)
 	local sound = findKeySound(obj, part)
 	if sound then
 		pcall(function() sound:Play() end)
-		print(("[Keyboard] %s played %s"):format(obj.Name, sound.Name))
-	else
-		print(("[Keyboard] %s pressed"):format(obj.Name))
 	end
 
-	if part then
-		task.spawn(animatePress, part)
-	end
-end
-
-local function makeClickable(part)
-	if part:FindFirstChildOfClass("ClickDetector") then return end
-	pcall(function()
-		local d = Instance.new("ClickDetector")
-		d.MaxActivationDistance = MAX_ACTIVATION
-		d.Parent = part
-	end)
+	task.spawn(pressAnimation, part)
 end
 
 local function setupKey(key)
-	local obj = resolveKey(key.path)
+	local obj = resolve(key.path)
 	if not obj then return end
 	local part = getPart(obj)
 	if not part then return end
 
-	makeClickable(part)
-
 	local detector = part:FindFirstChildOfClass("ClickDetector")
-	if detector then
-		detector.MouseClick:Connect(function(player) triggerKey(obj) end)
+	if not detector then
+		detector = Instance.new("ClickDetector")
+		detector.MaxActivationDistance = MAX_ACTIVATION
+		detector.Parent = part
 	end
+	detector.MouseClick:Connect(function(player) triggerKey(obj) end)
 
 	local prompt = part:FindFirstChildOfClass("ProximityPrompt")
 	if prompt then
 		prompt.Triggered:Connect(function(player) triggerKey(obj) end)
 	end
 
-	local myTouch = {}
-	seenTouch[obj] = myTouch
+	local touching = {}
+	onKey[obj] = touching
 	part.Touched:Connect(function(hit)
-		local char = hit and hit.Parent
-		if not char then return end
-		if not char:FindFirstChildOfClass("Humanoid") then return end
-		if myTouch[char] then return end
-		myTouch[char] = true
+		local char = hit.Parent
+		if not char or not char:FindFirstChildOfClass("Humanoid") then return end
+		if touching[char] then return end
+		touching[char] = true
 		triggerKey(obj)
-		task.delay(COOLDOWN * 2, function() myTouch[char] = nil end)
+	end)
+	part.TouchEnded:Connect(function(hit)
+		local char = hit.Parent
+		if not char then return end
+		touching[char] = nil
 	end)
 end
 
