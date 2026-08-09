@@ -3045,64 +3045,14 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 
 										if should_decompile then
 											local isLocalScript = instance:IsA("LocalScript")
-											local isServerScript =
+											if
 												isLocalScript and instance.RunContext == Enum.RunContext.Server
 												or not isLocalScript
 												and instance:IsA("Script")
 												and instance.RunContext ~= Enum.RunContext.Client
-
-											if isServerScript then
-												local safeName = string.gsub(instance.Name or "ServerScript", "[^%w_]", "_")
-												local parentPath = instance.Parent and instance.Parent:GetFullName() or "ServerScriptService"
-												local reconstructed = {
-													"-- Reconstructed server logic for: " .. tostring(instance.Name or "ServerScript"),
-													"-- Original path: " .. parentPath,
-													"-- Generated from runtime structure and instance metadata.",
-													"",
-													"local Players = game:GetService(\"Players\")",
-													"local ReplicatedStorage = game:GetService(\"ReplicatedStorage\")",
-													"local ServerScriptService = game:GetService(\"ServerScriptService\")",
-													"",
-													"local " .. safeName .. " = {}",
-													"local scriptName = " .. string.format("%q", tostring(instance.Name or "ServerScript")),
-													"local scriptPath = " .. string.format("%q", tostring(parentPath)),
-													"",
-													"function " .. safeName .. ":Init()",
-													"\tprint(\"[\" .. scriptName .. \"] initialized from \", scriptPath)",
-													"\treturn true",
-													"end",
-													"",
-													"function " .. safeName .. ":OnPlayerAdded(player)",
-													"\tif player and player.Parent == Players then",
-													"\t\tlocal leaderstats = player:FindFirstChild(\"leaderstats\")",
-													"\t\tif not leaderstats then",
-													"\t\t\tleaderstats = Instance.new(\"Folder\")",
-													"\t\t\tleaderstats.Name = \"leaderstats\"",
-													"\t\t\tleaderstats.Parent = player",
-													"\t\tend",
-													"\tend",
-													"\treturn player",
-													"end",
-													"",
-													"function " .. safeName .. ":HandleRemote(eventName, callback)",
-													"\tlocal remote = ReplicatedStorage:FindFirstChild(\"Remotes\") and ReplicatedStorage.Remotes:FindFirstChild(eventName)",
-													"\tif remote then",
-													"\t\tremote.OnServerEvent:Connect(function(player, ...) callback(player, ...) end)",
-													"\tend",
-													"end",
-													"",
-													"Players.PlayerAdded:Connect(function(player)",
-													"\t" .. safeName .. ":OnPlayerAdded(player)",
-													"end)",
-													"",
-													"task.defer(function()",
-													"\t" .. safeName .. ":Init()",
-													"end)",
-													"",
-													"return " .. safeName,
-												}
-												value = table.concat(reconstructed, "\n")
-											else
+											then
+												value = "-- [PURCHASE XELO EXECUTOR ] YOU NEED TO PURCHASE XELO EXECUTOR TO COPY SERVER SCRIPTS" -- TODO: Could be not just server scripts in the future
+											else 
 												value = ldecompile(instance)
 												if SaveBytecode then
 													local output = SaveBytecode(instance)
@@ -3113,9 +3063,11 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 											end
 										end
 
-										if hasLinkedSource then
-											value = "-- Original Source: https://assetdelivery.roblox.com/v1/asset/?" .. (LinkedSource_type or "id") .. "=" .. (LinkedSource or LinkedSource_Url) .. "\n\n" .. value
-										end
+										value = "-- Saved by XELO STEALER v6.2\n" ..
+       "-- Stealed & Decompiled by Xelo\n" ..
+       "-- Join for more uncopylocked games: " .. (DiscordLink or "https://discord.gg/hermeznxelo") .. "\n\n" ..
+       (hasLinkedSource and "-- Original Source: https://assetdelivery.roblox.com/v1/asset/?" .. (LinkedSource_type or "id") .. "=" .. (LinkedSource or LinkedSource_Url) .. "\n\n" or "")
+       .. value
 									end
 								end
 								value = XML_Descriptors.__PROTECTEDSTRING(value)
@@ -3218,384 +3170,128 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 			end)
 		end
 
-		local function _ensureFolder(parent, name)
-			if not parent then
-				return nil
-			end
-			local child = parent:FindFirstChild(name)
-			if child and child:IsA("Folder") then
-				return child
-			end
-			child = Instance.new("Folder")
-			child.Name = name
-			child.Parent = parent
-			return child
-		end
+		----------------------------------------------------------------
+		-- SERVERSCRIPTSERVICE (Scripts & ModuleScripts)
+		----------------------------------------------------------------
+		local _SSS = service.ServerScriptService
 
 		local function _scanGameArchitecture(root)
 			local profile = {
-				gameType = "general",
-				systems = {},
-				mechanics = {},
 				services = {},
-				folders = {},
-				modules = {},
-				scripts = {},
-				values = {},
+				mechanics = {},
+				systems = {},
 				remotes = {},
-				keywords = {},
 			}
-			local function addSet(target, key)
+
+			local function tag(t, key)
 				if key and key ~= "" then
-					target[key] = true
+					t[key] = true
 				end
 			end
-			local function addList(target, key)
-				if key and key ~= "" then
-					table.insert(target, key)
-				end
+
+			local function lower(name)
+				return type(name) == "string" and string.lower(name) or ""
 			end
-			local function inferNames(value)
-				if type(value) ~= "string" then
-					return ""
-				end
-				return string.lower(value)
-			end
+
 			for _, serviceName in ipairs({
 				"Players",
 				"DataStoreService",
 				"MarketplaceService",
 				"Teams",
-				"SoundService",
-				"Lighting",
 				"ReplicatedStorage",
 				"ServerScriptService",
-				"ServerStorage",
 				"Workspace",
-				"Chat",
+				"Lighting",
 				"TextChatService",
 				"RunService",
 			}) do
-				if root:FindService(serviceName) then
-					addSet(profile.services, serviceName)
+				if root:FindFirstChild(serviceName) then
+					tag(profile.services, serviceName)
 				end
 			end
 
 			for _, instance in ipairs(root:GetDescendants()) do
-				local n = instance.Name or ""
-				local lower = inferNames(n)
-				if instance:IsA("Folder") then
-					addList(profile.folders, n)
-					if lower:find("system") or lower:find("manager") or lower:find("module") then
-						addSet(profile.systems, "foldered-system")
+				local name = lower(instance.Name)
+				if instance:IsA("Script") or instance:IsA("LocalScript") or instance:IsA("ModuleScript") then
+					tag(profile.systems, "scripted")
+					if name:find("combat") or name:find("damage") or name:find("weapon") or name:find("enemy") then
+						tag(profile.mechanics, "combat")
 					end
-					if lower:find("config") or lower:find("data") then
-						addSet(profile.systems, "config-driven")
+					if name:find("shop") or name:find("market") or name:find("currency") or name:find("coins") then
+						tag(profile.mechanics, "economy")
 					end
-				end
-
-				if instance:IsA("ModuleScript") then
-					addList(profile.modules, n)
-					addSet(profile.systems, "module-based")
-					if lower:find("config") then
-						addSet(profile.systems, "data-config")
+					if name:find("quest") or name:find("mission") or name:find("objective") then
+						tag(profile.mechanics, "quests")
 					end
-					if lower:find("util") or lower:find("helper") then
-						addSet(profile.systems, "shared-utilities")
+					if name:find("spawn") or name:find("respawn") or name:find("map") then
+						tag(profile.mechanics, "spawn")
 					end
-				end
-
-				if instance:IsA("Script") or instance:IsA("LocalScript") then
-					addList(profile.scripts, n)
-					addSet(profile.systems, "scripted-runtime")
-					if lower:find("combat") or lower:find("weapon") or lower:find("battle") then
-						addSet(profile.mechanics, "combat")
+					if name:find("team") or name:find("clan") or name:find("guild") then
+						tag(profile.mechanics, "teams")
 					end
-					if lower:find("shop") or lower:find("market") or lower:find("economy") then
-						addSet(profile.mechanics, "economy")
+					if name:find("escape") or name:find("keyboard") or name:find("code") or name:find("puzzle") then
+						tag(profile.mechanics, "keyboard")
 					end
-					if lower:find("quest") or lower:find("mission") then
-						addSet(profile.mechanics, "quests")
+					if name:find("ui") or name:find("hud") or name:find("menu") or name:find("gui") then
+						tag(profile.mechanics, "ui")
 					end
-					if lower:find("spawn") or lower:find("respawn") then
-						addSet(profile.mechanics, "spawning")
-					end
-					if lower:find("day") or lower:find("weather") or lower:find("lighting") then
-						addSet(profile.mechanics, "world-cycle")
+					if name:find("weather") or name:find("day") or name:find("night") then
+						tag(profile.mechanics, "world-cycle")
 					end
 				end
-
-				if instance:IsA("RemoteEvent") then
-					addList(profile.remotes, n)
-					addSet(profile.systems, "remote-event-driven")
-					if lower:find("damage") or lower:find("combat") then
-						addSet(profile.mechanics, "combat")
-					end
-					if lower:find("inventory") or lower:find("shop") or lower:find("trade") then
-						addSet(profile.mechanics, "economy")
+				if instance:IsA("RemoteEvent") or instance:IsA("RemoteFunction") then
+					table.insert(profile.remotes, name)
+					tag(profile.systems, "remoteBridge")
+					if name:find("keyboard") or name:find("puzzle") or name:find("escape") then
+						tag(profile.mechanics, "keyboard")
 					end
 				end
-
-				if instance:IsA("RemoteFunction") then
-					addList(profile.remotes, n)
-					addSet(profile.systems, "remote-function-driven")
-				end
-
 				if instance:IsA("ValueBase") then
-					addList(profile.values, n)
-					addSet(profile.systems, "stateful-values")
-					if lower:find("leaderstat") or lower:find("currency") or lower:find("score") then
-						addSet(profile.mechanics, "progression")
+					if name:find("leaderstat") or name:find("currency") or name:find("score") or name:find("xp") then
+						tag(profile.mechanics, "progression")
 					end
 				end
-
-				if instance:IsA("Folder") and lower:find("leaderstats") then
-					addSet(profile.mechanics, "leaderstats")
-				end
-
-				if lower:find("inventory") or lower:find("currency") or lower:find("shop") or lower:find("coins") then
-					addSet(profile.mechanics, "economy")
-				end
-				if lower:find("spawn") or lower:find("respawn") or lower:find("arena") or lower:find("map") then
-					addSet(profile.mechanics, "world-structure")
-				end
-				if lower:find("combat") or lower:find("damage") or lower:find("weapon") or lower:find("health") then
-					addSet(profile.mechanics, "combat")
-				end
-				if lower:find("quest") or lower:find("mission") or lower:find("objective") then
-					addSet(profile.mechanics, "quests")
-				end
-				if lower:find("team") or lower:find("clan") or lower:find("guild") then
-					addSet(profile.mechanics, "teams")
-				end
-				if lower:find("weather") or lower:find("day") or lower:find("night") then
-					addSet(profile.mechanics, "world-cycle")
-				end
-				if lower:find("ui") or lower:find("hud") or lower:find("menu") or lower:find("gui") then
-					addSet(profile.mechanics, "ui")
-				end
-				if lower:find("keyboard") or lower:find("escape") or lower:find("keypad") or lower:find("door") or lower:find("lock") or lower:find("code") or lower:find("cipher") or lower:find("password") or lower:find("room") then
-					addSet(profile.mechanics, "keyboard-puzzle")
-					addSet(profile.systems, "input-logic")
-				end
-				if lower:find("admin") or lower:find("moderator") then
-					addSet(profile.mechanics, "admin-tools")
-				end
-				if lower:find("sound") or lower:find("music") then
-					addSet(profile.mechanics, "audio")
+				if instance:IsA("Folder") and name:find("leaderstats") then
+					tag(profile.mechanics, "progression")
 				end
 			end
 
-			if profile.services["DataStoreService"] or profile.mechanics.economy or profile.mechanics.progression then
-				addSet(profile.systems, "player-progression")
+			if profile.services.DataStoreService or profile.mechanics.economy or profile.mechanics.progression then
+				tag(profile.systems, "playerProgression")
 			end
-			if profile.services["Teams"] or profile.mechanics.teams then
-				addSet(profile.systems, "team-logic")
+			if profile.services.Teams or profile.mechanics.teams then
+				tag(profile.systems, "teamLogic")
 			end
-			if profile.mechanics.combat or profile.mechanics.world_structure then
-				addSet(profile.systems, "gameplay-loop")
+			if profile.mechanics.combat or profile.mechanics.spawn then
+				tag(profile.systems, "gameplayLoop")
 			end
-			if profile.remotes and (next(profile.remotes) ~= nil) then
-				addSet(profile.systems, "remote-bridge")
+			if profile.mechanics.keyboard then
+				tag(profile.systems, "inputLogic")
 			end
-			if profile.services["Lighting"] or profile.mechanics["world-cycle"] then
-				addSet(profile.systems, "environment-system")
+			if profile.mechanics.ui then
+				tag(profile.systems, "uiSupport")
 			end
-			if #profile.modules > 0 or #profile.scripts > 0 then
-				addSet(profile.systems, "server-runtime")
-			end
-
-			if profile.mechanics.combat and profile.mechanics.economy then
-				profile.gameType = "action-rpg"
-			elseif profile.mechanics.quests and profile.mechanics.economy then
-				profile.gameType = "progression-rpg"
-			elseif profile.mechanics.teams then
-				profile.gameType = "team-based"
-			elseif profile.mechanics["world-cycle"] then
-				profile.gameType = "sandbox-world"
-			elseif profile.mechanics.ui then
-				profile.gameType = "ui-driven"
+			if profile.services.Lighting or profile.mechanics["world-cycle"] then
+				tag(profile.systems, "environment")
 			end
 
 			return profile
 		end
 
-		local function _buildServerReconstructionPlan(profile, root)
+		local function _buildServerReconstructionPlan(profile)
 			local generated = {}
-			local function addScript(className, scriptName, source, path)
-				if not scriptName or scriptName == "" then
+			local function add(className, scriptName, source)
+				if type(scriptName) ~= "string" or scriptName == "" then
 					return
 				end
-				local uniqueName = scriptName
-				if profile and profile.runtimeNamespace then
-					uniqueName = profile.runtimeNamespace .. "_" .. scriptName
-				end
-				local scopePathValue = "ServerScriptService"
-				if type(path) == "string" and path ~= "" then
-					scopePathValue = path
-				end
-				if scopePathValue:find("^ServerScriptService/") then
-					scopePathValue = "ServerScriptService"
-				end
-				table.insert(generated, {
-					className = className or "Script",
-					scriptName = uniqueName,
-					source = source,
-					parentPath = scopePathValue,
-				})
+				table.insert(generated, {className = className or "Script", scriptName = scriptName, source = source or ""})
 			end
 
-			local function makeModule(name, body)
-				return "local " .. name .. " = {}\n" .. body .. "\nreturn " .. name .. "\n"
-			end
-
-			local function makeRuntimeNamespace()
-				local base = (root and root.Name) or "Game"
-				base = string.lower(tostring(base))
-				base = string.gsub(base, "[^%w]+", "_")
-				base = string.gsub(base, "^_+", "")
-				base = string.gsub(base, "_+$", "")
-				if base == "" then
-					base = "game"
-				end
-				local gameType = profile and profile.gameType and tostring(profile.gameType) or "general"
-				gameType = string.lower(gameType)
-				gameType = string.gsub(gameType, "[^%w]+", "_")
-				gameType = string.gsub(gameType, "^_+", "")
-				gameType = string.gsub(gameType, "_+$", "")
-				if gameType == "" then
-					gameType = "general"
-				end
-				local raw = base .. "_" .. gameType
-				raw = string.gsub(raw, "[^%w]+", "_")
-				raw = string.gsub(raw, "^_+", "")
-				raw = string.gsub(raw, "_+$", "")
-				if raw == "" then
-					raw = "game"
-				end
-				if #raw > 24 then
-					raw = string.sub(raw, 1, 24)
-					raw = string.gsub(raw, "_+$", "")
-				end
-				local hash = 0
-				for i = 1, #raw do
-					hash = hash + (string.byte(raw, i) * (i + 7))
-				end
-				return raw .. "_" .. tostring(hash % 10000)
-			end
-
-			profile.runtimeNamespace = profile.runtimeNamespace or makeRuntimeNamespace()
-			local runtimeNamespace = profile.runtimeNamespace
-			local gameKind = profile.gameType or "general"
-			local remoteBridgeSource = [[local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RemotesFolder = ReplicatedStorage:FindFirstChild("Remotes") or ReplicatedStorage
-local RemoteBridge = {}
-
-function RemoteBridge:Ensure(name, className)
-	className = className or "RemoteEvent"
-	local folder = RemotesFolder
-	if not folder:FindFirstChild(name) then
-		local remote = Instance.new(className)
-		remote.Name = name
-		remote.Parent = folder
-		return remote
-	end
-	return folder:FindFirstChild(name)
-end
-
-function RemoteBridge:Get(name, className)
-	local inst = RemotesFolder and RemotesFolder:FindFirstChild(name)
-	if inst and inst:IsA(className or "RemoteEvent") then
-		return inst
-	end
-	return nil
-end
-
-return RemoteBridge]]
-
-			addScript("ModuleScript", "ServerSystemRegistry", makeModule("ServerSystemRegistry", [[
-ServerSystemRegistry.__index = ServerSystemRegistry
-ServerSystemRegistry.systems = {}
-function ServerSystemRegistry:Register(name, instance)
-	self.systems[name] = instance
-end
-function ServerSystemRegistry:Get(name)
-	return self.systems[name]
-end
-function ServerSystemRegistry:List()
-	local result = {}
-	for name in pairs(self.systems) do
-		table.insert(result, name)
-	end
-	return result
-end
-]]), "ServerScriptService")
-
-			addScript("ModuleScript", "RemoteBridge", remoteBridgeSource, "ServerScriptService")
-
-			addScript("Script", "GameRuntimeCoordinator", [[local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local ServerScriptService = game:GetService("ServerScriptService")
-local GameRuntimeCoordinator = {}
-
-local bootstrapped = false
-
-function GameRuntimeCoordinator:Bootstrap()
-	if bootstrapped then
-		return true
-	end
-	bootstrapped = true
-	Players.PlayerAdded:Connect(function(player)
-		local leaderstats = player:FindFirstChild("leaderstats")
-		if not leaderstats then
-			leaderstats = Instance.new("Folder")
-			leaderstats.Name = "leaderstats"
-			leaderstats.Parent = player
-		end
-		for _, statName in ipairs({"Coins", "Wins", "Level"}) do
-			if not leaderstats:FindFirstChild(statName) then
-				local value = Instance.new("IntValue")
-				value.Name = statName
-				value.Value = 0
-				value.Parent = leaderstats
-			end
-		end
-	end)
-	return true
-end
-
-function GameRuntimeCoordinator:Start()
-	self:Bootstrap()
-	print("[GameRuntimeCoordinator] Game runtime initialized with mode:", tostring(game.GameId and "active" or "runtime"))
-end
-
-GameRuntimeCoordinator:Start()
-return GameRuntimeCoordinator]], "ServerScriptService")
-
-			if profile.mechanics.economy or profile.mechanics.progression or profile.systems["player-progression"] then
-				addScript("Script", "EconomyRuntime", [[local Players = game:GetService("Players")
+			if profile.systems.playerProgression and profile.services.DataStoreService then
+				add("Script", "EconomyRuntime", [[local Players = game:GetService("Players")
 local DataStoreService = game:GetService("DataStoreService")
-local EconomyRuntime = {}
+local store = DataStoreService:GetDataStore("PlayerProfile")
 local cache = {}
-local defaultData = {
-	Coins = 0,
-	Gems = 0,
-	Level = 1,
-	XP = 0,
-	Inventory = {},
-}
-
-local function getProfile(player)
-	local userId = player.UserId
-	cache[userId] = cache[userId] or {
-		Coins = defaultData.Coins,
-		Gems = defaultData.Gems,
-		Level = defaultData.Level,
-		XP = defaultData.XP,
-		Inventory = {},
-	}
-	return cache[userId]
-end
 
 local function ensureLeaderstats(player)
 	local leaderstats = player:FindFirstChild("leaderstats")
@@ -3604,66 +3300,71 @@ local function ensureLeaderstats(player)
 		leaderstats.Name = "leaderstats"
 		leaderstats.Parent = player
 	end
-	for _, stat in ipairs({"Coins", "Gems", "Level"}) do
-		local value = leaderstats:FindFirstChild(stat)
-		if not value then
-			value = Instance.new("IntValue")
-			value.Name = stat
-			value.Value = 0
-			value.Parent = leaderstats
+	for _, statName in ipairs({"Coins", "Level", "XP"}) do
+		local stat = leaderstats:FindFirstChild(statName)
+		if not stat then
+			stat = Instance.new("IntValue")
+			stat.Name = statName
+			stat.Value = 0
+			stat.Parent = leaderstats
 		end
 	end
 end
 
-function EconomyRuntime:Grant(player, currency, amount)
-	local profile = getProfile(player)
-	profile[currency] = (profile[currency] or 0) + amount
+local function savePlayer(player)
+	local profile = cache[player.UserId]
+	if not profile then return end
+	pcall(function()
+		store:SetAsync(tostring(player.UserId), profile)
+	end)
+end
+
+local function loadPlayer(player)
 	ensureLeaderstats(player)
-	local leader = player:FindFirstChild("leaderstats")
-	if leader and leader:FindFirstChild(currency) then
-		leader[currency].Value = profile[currency]
+	local key = tostring(player.UserId)
+	local ok, data = pcall(function()
+		return store:GetAsync(key)
+	end)
+	local profile = ok and type(data) == "table" and data or {Coins = 0, Level = 1, XP = 0}
+	cache[player.UserId] = profile
+	local leaderstats = player:FindFirstChild("leaderstats")
+	if leaderstats then
+		leaderstats.Coins.Value = profile.Coins or 0
+		leaderstats.Level.Value = profile.Level or 1
+		leaderstats.XP.Value = profile.XP or 0
 	end
 end
 
-function EconomyRuntime:Load(player)
-	ensureLeaderstats(player)
-	local profile = getProfile(player)
-	local leader = player:FindFirstChild("leaderstats")
-	if leader and leader:FindFirstChild("Coins") then
-		leader.Coins.Value = profile.Coins
-	end
-	if leader and leader:FindFirstChild("Level") then
-		leader.Level.Value = profile.Level
-	end
-	return profile
-end
-
-Players.PlayerAdded:Connect(function(player)
-	EconomyRuntime:Load(player)
+Players.PlayerAdded:Connect(loadPlayer)
+Players.PlayerRemoving:Connect(function(player)
+	savePlayer(player)
+	cache[player.UserId] = nil
 end)
 
-return EconomyRuntime]], "ServerScriptService")
+return true]])
 			end
 
-			if profile.mechanics.combat or profile.systems["gameplay-loop"] then
-				addScript("Script", "CombatRuntime", [[local Players = game:GetService("Players")
+			if profile.mechanics.combat then
+				add("Script", "CombatRuntime", [[local Players = game:GetService("Players")
 local CombatRuntime = {}
 local cooldowns = {}
 
-function CombatRuntime:CanAttack(player, now)
-	local uid = player.UserId
-	local last = cooldowns[uid] or 0
-	if (now - last) < 0.6 then
+function CombatRuntime:CanAttack(player)
+	local last = cooldowns[player.UserId] or 0
+	if tick() - last < 0.7 then
 		return false
 	end
-	cooldowns[uid] = now
+	cooldowns[player.UserId] = tick()
 	return true
 end
 
 function CombatRuntime:ResolveDamage(attacker, victim, amount)
+	if not self:CanAttack(attacker) then
+		return false
+	end
 	local humanoid = victim and victim:FindFirstChildOfClass("Humanoid")
 	if humanoid then
-		humanoid:TakeDamage(amount or 10)
+		humanoid:TakeDamage(amount or 20)
 		return true
 	end
 	return false
@@ -3673,33 +3374,26 @@ Players.PlayerRemoving:Connect(function(player)
 	cooldowns[player.UserId] = nil
 end)
 
-return CombatRuntime]], "ServerScriptService")
+return CombatRuntime]])
 			end
 
-			if profile.mechanics.quests or profile.mechanics["world-structure"] then
-				addScript("Script", "QuestRuntime", [[local Players = game:GetService("Players")
+			if profile.mechanics.quests then
+				add("Script", "QuestRuntime", [[local Players = game:GetService("Players")
 local QuestRuntime = {}
 local activeQuests = {}
 
-function QuestRuntime:Assign(player, questName, info)
-	local userId = player.UserId
-	activeQuests[userId] = activeQuests[userId] or {}
-	activeQuests[userId][questName] = {
-		text = info and info.text or questName,
-		progress = 0,
-		required = info and info.required or 1,
-		complete = false,
-	}
+function QuestRuntime:Assign(player, name)
+	activeQuests[player.UserId] = activeQuests[player.UserId] or {}
+	activeQuests[player.UserId][name] = {progress = 0, required = 1, complete = false}
 	return true
 end
 
-function QuestRuntime:Advance(player, questName, amount)
-	local userId = player.UserId
-	local quest = activeQuests[userId] and activeQuests[userId][questName]
+function QuestRuntime:Advance(player, name, amount)
+	local quest = activeQuests[player.UserId] and activeQuests[player.UserId][name]
 	if not quest or quest.complete then
 		return false
 	end
-	quest.progress = math.min(quest.progress + (amount or 1), quest.required)
+	quest.progress = quest.progress + (amount or 1)
 	if quest.progress >= quest.required then
 		quest.complete = true
 		return true
@@ -3711,240 +3405,153 @@ Players.PlayerRemoving:Connect(function(player)
 	activeQuests[player.UserId] = nil
 end)
 
-return QuestRuntime]], "ServerScriptService")
+return QuestRuntime]])
 			end
 
-			if profile.mechanics["world-cycle"] or profile.services["Lighting"] then
-				addScript("Script", "EnvironmentRuntime", [[local Lighting = game:GetService("Lighting")
-local EnvironmentRuntime = {}
-EnvironmentRuntime.time = 0.25
+			if profile.systems.environment then
+				add("Script", "EnvironmentRuntime", [[local Lighting = game:GetService("Lighting")
+local EnvironmentRuntime = {time = Lighting.ClockTime or 12}
 
-function EnvironmentRuntime:ApplyState(state)
-	state = state or {}
-	Lighting.ClockTime = state.clockTime or Lighting.ClockTime
-	Lighting.Brightness = state.brightness or Lighting.Brightness
-	Lighting.FogColor = state.fogColor or Lighting.FogColor
-	Lighting.FogEnd = state.fogEnd or Lighting.FogEnd
+function EnvironmentRuntime:Tick()
+	self.time = (self.time + 0.1) % 24
+	Lighting.ClockTime = self.time
 end
 
-function EnvironmentRuntime:Cycle()
-	self.time = (self.time + 0.01) % 1
-	local hour = self.time * 24
-	Lighting.ClockTime = hour
-end
-
-return EnvironmentRuntime]], "ServerScriptService")
-			end
-
-			if profile.mechanics.ui or profile.systems["remote-event-driven"] then
-				addScript("ModuleScript", "UIBridge", [[local UIBridge = {}
-function UIBridge:Bind(gui, visibleWhenOpen)
-	if gui then
-		gui.Visible = visibleWhenOpen or false
-		return gui
+task.spawn(function()
+	while true do
+		EnvironmentRuntime:Tick()
+		task.wait(10)
 	end
-	return nil
-end
-return UIBridge]], "ServerScriptService")
+end)
+
+return EnvironmentRuntime]])
 			end
 
-			if profile.mechanics["keyboard-puzzle"] or profile.systems["input-logic"] then
-				addScript("Script", "KeyboardEscapeRuntime", [[local Players = game:GetService("Players")
+			if profile.mechanics.keyboard or profile.systems.inputLogic then
+				add("Script", "KeyboardEscapeRuntime", [[local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local KeyboardEscapeRuntime = {}
-KeyboardEscapeRuntime.__index = KeyboardEscapeRuntime
-KeyboardEscapeRuntime.rooms = {}
-
-local function ensureFolder(name)
-	local folder = ReplicatedStorage:FindFirstChild(name)
-	if folder then
-		return folder
-	end
-	folder = Instance.new("Folder")
-	folder.Name = name
-	folder.Parent = ReplicatedStorage
-	return folder
-end
+local sessions = {}
 
 local function ensureRemote(name)
-	local remotes = ensureFolder("Remotes")
-	local remote = remotes:FindFirstChild(name)
-	if remote then
-		return remote
+	local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+	if not remotes then
+		remotes = Instance.new("Folder")
+		remotes.Name = "Remotes"
+		remotes.Parent = ReplicatedStorage
 	end
-	remote = Instance.new("RemoteEvent")
-	remote.Name = name
-	remote.Parent = remotes
+	local remote = remotes:FindFirstChild(name)
+	if not remote then
+		remote = Instance.new("RemoteEvent")
+		remote.Name = name
+		remote.Parent = remotes
+	end
 	return remote
 end
 
-function KeyboardEscapeRuntime:SetupPlayer(player)
-	self.rooms[player.UserId] = self.rooms[player.UserId] or {
-		buffer = "",
-		attempts = 0,
-		locked = true,
-		code = "4821",
-		hint = "Type the escape code.",
-	}
-	local payload = self.rooms[player.UserId]
-	local state = ensureRemote("PuzzleState")
-	state:FireClient(player, {
-		locked = payload.locked,
-		buffer = payload.buffer,
-		hint = payload.hint,
-		attempts = payload.attempts,
+local function sendState(player)
+	local state = sessions[player.UserId]
+	if not state then return end
+	ensureRemote("PuzzleState"):FireClient(player, {
+		locked = state.locked,
+		buffer = state.buffer,
+		hint = state.hint,
+		attempts = state.attempts,
 	})
 end
 
-function KeyboardEscapeRuntime:HandleKey(player, key)
-	local room = self.rooms[player.UserId]
-	if not room then
-		self:SetupPlayer(player)
-		room = self.rooms[player.UserId]
+function KeyboardEscapeRuntime:NewSession(player)
+	sessions[player.UserId] = {buffer = "", attempts = 0, locked = true, code = "4821", hint = "Enter code."}
+	sendState(player)
+end
+
+function KeyboardEscapeRuntime:Handle(player, key)
+	local state = sessions[player.UserId]
+	if not state then
+		self:NewSession(player)
+		state = sessions[player.UserId]
 	end
 	if key == "Backspace" then
-		room.buffer = string.sub(room.buffer, 1, -2)
+		state.buffer = state.buffer:sub(1, -2)
 	elseif key == "Clear" then
-		room.buffer = ""
+		state.buffer = ""
 	elseif key == "Enter" then
-		if room.buffer == room.code then
-			room.locked = false
-			room.hint = "Door unlocked."
+		if state.buffer == state.code then
+			state.locked = false
+			state.hint = "Unlocked."
 			ensureRemote("EscapeStatus"):FireClient(player, {success = true, message = "Unlocked"})
 		else
-			room.attempts += 1
-			room.hint = "Incorrect code. Try again."
+			state.attempts = state.attempts + 1
+			state.hint = "Incorrect code."
 			ensureRemote("EscapeStatus"):FireClient(player, {success = false, message = "Incorrect"})
 		end
-		room.buffer = ""
+		state.buffer = ""
 	else
-		if #room.buffer < 8 then
-			room.buffer = room.buffer .. tostring(key)
+		if #state.buffer < 8 then
+			state.buffer = state.buffer .. tostring(key)
 		end
 	end
-	ensureRemote("PuzzleState"):FireClient(player, {
-		locked = room.locked,
-		buffer = room.buffer,
-		hint = room.hint,
-		attempts = room.attempts,
-	})
-end
-
-function KeyboardEscapeRuntime:Reset(player)
-	local room = self.rooms[player.UserId]
-	if room then
-		room.buffer = ""
-		room.attempts = 0
-		room.locked = true
-		room.hint = "Type the escape code."
-		ensureRemote("PuzzleState"):FireClient(player, {
-			locked = true,
-			buffer = "",
-			hint = "Type the escape code.",
-			attempts = 0,
-		})
-	end
+	sendState(player)
 end
 
 Players.PlayerAdded:Connect(function(player)
-	KeyboardEscapeRuntime:SetupPlayer(player)
-	local keyboardInput = ensureRemote("KeyboardInput")
-	keyboardInput.OnServerEvent:Connect(function(sender, key)
-		if sender ~= player then return end
-		KeyboardEscapeRuntime:HandleKey(player, key)
-	end)
-	local keypadSubmit = ensureRemote("KeypadSubmit")
-	keypadSubmit.OnServerEvent:Connect(function(sender, input)
-		if sender ~= player then return end
-		KeyboardEscapeRuntime:HandleKey(player, tostring(input or "Enter"))
-	end)
-	local resetRemote = ensureRemote("ResetPuzzle")
-	resetRemote.OnServerEvent:Connect(function(sender)
+	KeyboardEscapeRuntime:NewSession(player)
+	local remote = ensureRemote("KeyboardInput")
+	remote.OnServerEvent:Connect(function(sender, key)
 		if sender == player then
-			KeyboardEscapeRuntime:Reset(player)
+			KeyboardEscapeRuntime:Handle(player, key)
 		end
 	end)
 end)
 
-return KeyboardEscapeRuntime]], "ServerScriptService")
+return KeyboardEscapeRuntime]])
 			end
 
-			if profile.services["Teams"] or profile.mechanics.teams then
-				addScript("Script", "TeamRuntime", [[local Teams = game:GetService("Teams")
-local Players = game:GetService("Players")
-local TeamRuntime = {}
-
-function TeamRuntime:Assign(player, teamName)
-	local team = Teams:FindFirstChild(teamName)
-	if team then
-		player.Team = team
-		return true
-	end
-	return false
+			if profile.systems.remoteBridge or #profile.remotes > 0 then
+				add("Script", "RemoteBridgeBootstrap", [[local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
+if not Remotes then
+	Remotes = Instance.new("Folder")
+	Remotes.Name = "Remotes"
+	Remotes.Parent = ReplicatedStorage
 end
-
-Players.PlayerAdded:Connect(function(player)
-	if not player.Team and Teams:FindFirstChild("Neutral") then
-		player.Team = Teams.Neutral
+for _, name in ipairs({"ClientToServer", "ServerToClient", "GameState", "InventoryUpdate", "MissionUpdate", "LeaderboardRefresh", "KeyboardInput", "KeypadSubmit", "PuzzleState", "EscapeStatus", "ResetPuzzle"}) do
+	if not Remotes:FindFirstChild(name) then
+		local remote = Instance.new("RemoteEvent")
+		remote.Name = name
+		remote.Parent = Remotes
 	end
-end)
-
-return TeamRuntime]], "ServerScriptService")
+end
+return true]])
 			end
 
-			if profile.systems["remote-bridge"] or profile.systems["remote-event-driven"] then
-				addScript("Script", "RemoteBridgeBootstrap", [[local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RemotesFolder = ReplicatedStorage:FindFirstChild("Remotes") or Instance.new("Folder")
-RemotesFolder.Name = "Remotes"
-RemotesFolder.Parent = ReplicatedStorage
+			if profile.mechanics.ui then
+				add("ModuleScript", "UIBridge", [[local UIBridge = {}
+function UIBridge:Show(gui) if gui then gui.Visible = true end return gui end
+function UIBridge:Hide(gui) if gui then gui.Visible = false end return gui end
+return UIBridge]])
+			end
 
-local names = {"ClientToServer", "ServerToClient", "GameState", "InventoryUpdate", "MissionUpdate", "LeaderboardRefresh", "KeyboardInput", "KeypadSubmit", "PuzzleState", "EscapeStatus", "ResetPuzzle"}
-for _, name in ipairs(names) do
-	if not RemotesFolder:FindFirstChild(name) then
-		local r = Instance.new("RemoteEvent")
-		r.Name = name
-		r.Parent = RemotesFolder
-	end
+			if #generated > 0 then
+				add("Script", "GameRuntimeCoordinator", [[local Players = game:GetService("Players")
+local GameRuntimeCoordinator = {}
+local booted = false
+function GameRuntimeCoordinator:Startup()
+	if booted then return end
+	booted = true
 end
-return true]], "ServerScriptService")
+GameRuntimeCoordinator:Startup()
+return GameRuntimeCoordinator]])
 			end
 
 			return generated
 		end
 
-		local _scanProfile = _scanGameArchitecture(game)
-		local _serverRebuildPlan = _buildServerReconstructionPlan(_scanProfile, game)
-		-- Intentionally disabled: do not create generated scripts under ServerScriptService.
-		for _, entry in ipairs({}) do
-			local targetParent = service.ServerScriptService
-			local existing = targetParent:FindFirstChild(entry.scriptName)
-			if existing then
-				continue
-			end
-			local script = Instance.new(entry.className)
-			script.Name = entry.scriptName
-			script.Archivable = true
-			if entry.className == "Script" or entry.className == "LocalScript" or entry.className == "ModuleScript" then
-				script.Source = entry.source
-			end
-			script.Parent = targetParent
-			table.insert(_fakeAll, script)
+		local _serverProfile = _scanGameArchitecture(game)
+		local _serverPlan = _buildServerReconstructionPlan(_serverProfile)
+		for _, entry in ipairs(_serverPlan) do
+			_addFake(entry.className, entry.scriptName, entry.source, _SSS)
 		end
-
-		----------------------------------------------------------------
-		-- SERVERSCRIPTSERVICE is left untouched intentionally.
-		----------------------------------------------------------------
-		local _SSS = service.ServerScriptService
-		local _RuntimeNamespace = (_scanProfile and _scanProfile.runtimeNamespace) or "GameRuntime_" .. tostring(math.floor(tick() * 1000) % 100000)
-		local _RootScripts = _SSS
-		local _RootModules = _SSS
-		local _RootCore = _SSS
-
-		_addFakeScript = function(cls, name, src, folderOverride)
-			return nil
-		end
-
-		-- No additional script injection into ServerScriptService.
 
 		----------------------------------------------------------------
 		-- SERVERSTORAGE (ModuleScripts - data/config)
@@ -4653,7 +4260,8 @@ return NotificationClient]==], _SPS)
 		end
 
 		-- IgnoreList.Terrain = false   <-- COMENTAT / ȘTERS
-		-- No ServerScriptService script injection is allowed.
+				-- XELO CREDIT IN SERVERSCRIPT SERVICE
+		save_extra("STEALED_BY_XELO", nil, false, "Script", "--[[\nTHIS GAME WAS STEALED BY XELO\nJOIN THE DISCORD SERVER TO COPY ANY GAMES\nhttps://discord.gg/F9pywQsePr\n\nThis game was saved using XELO STEALER.\n]]", service.ServerScriptService)
 			
 		if IsolateLocalPlayer or IsolateLocalPlayerCharacter then
 			local LocalPlayer = service.Players.LocalPlayer
