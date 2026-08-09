@@ -3365,6 +3365,14 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 				table.insert(L, "")
 				table.insert(L, "local RECONSTRUCTED = " .. itemsLua(scripts))
 				table.insert(L, "")
+				table.insert(L, "local function findItem(path)")
+				table.insert(L, "\tlocal current = game")
+				table.insert(L, "\tfor segment in string.gmatch(path, \"[^.]+\") do")
+				table.insert(L, "\t\tcurrent = current and current:FindFirstChild(segment)")
+				table.insert(L, "\tend")
+				table.insert(L, "\treturn current")
+				table.insert(L, "end")
+				table.insert(L, "")
 				table.insert(L, logicLua)
 				return table.concat(L, "\n")
 			end
@@ -3376,7 +3384,7 @@ local Players = game:GetService("Players")
 local function find(name)
 	for _, item in ipairs(DETECTED) do
 		if item.name == name then
-			return game:FindFirstChild(item.path, true)
+			return findItem(item.path)
 		end
 	end
 	return nil
@@ -3417,7 +3425,7 @@ return { Talk = Talk, SetSpeed = SetSpeed, Respawn = Respawn, Items = DETECTED }
 local function find(name)
 	for _, item in ipairs(DETECTED) do
 		if item.name == name then
-			return game:FindFirstChild(item.path, true)
+			return findItem(item.path)
 		end
 	end
 	return nil
@@ -3447,7 +3455,7 @@ function Toggle(door)
 end
 
 for _, item in ipairs(DETECTED) do
-	local door = game:FindFirstChild(item.path, true)
+	local door = findItem(item.path)
 	if door then
 		local part = door:IsA("BasePart") and door or door.PrimaryPart
 		if part then
@@ -3470,7 +3478,7 @@ local Players = game:GetService("Players")
 local function randomSpawn()
 	if #DETECTED == 0 then return nil end
 	local item = DETECTED[math.random(1, #DETECTED)]
-	return game:FindFirstChild(item.path, true)
+	return findItem(item.path)
 end
 
 local function teleport(player)
@@ -3493,7 +3501,7 @@ Players.PlayerAdded:Connect(onAdded)
 local function find(name)
 	for _, item in ipairs(DETECTED) do
 		if item.name == name then
-			return game:FindFirstChild(item.path, true)
+			return findItem(item.path)
 		end
 	end
 	return nil
@@ -3508,7 +3516,7 @@ function Buy(player, itemName)
 end
 
 for _, item in ipairs(DETECTED) do
-	local tool = game:FindFirstChild(item.path, true)
+	local tool = findItem(item.path)
 	if tool and tool:IsA("Tool") then
 		local detector = tool:FindFirstChildOfClass("ClickDetector")
 		if detector then
@@ -3529,7 +3537,7 @@ local function damage(victim, amount, attacker)
 end
 
 for _, item in ipairs(DETECTED) do
-	local weapon = game:FindFirstChild(item.path, true)
+	local weapon = findItem(item.path)
 	if weapon and weapon:IsA("Tool") then
 		weapon.Activated:Connect(function()
 			local Players = game:GetService("Players")
@@ -3562,7 +3570,7 @@ local function openLoot(player, obj)
 	obj:SetAttribute("Opened", true)
 	local backpack = player:FindFirstChildOfClass("Backpack")
 	for _, item in ipairs(DETECTED) do
-		local tool = game:FindFirstChild(item.path, true)
+		local tool = findItem(item.path)
 		if tool and tool:IsA("Tool") then
 			tool:Clone().Parent = backpack or player
 			break
@@ -3572,7 +3580,7 @@ local function openLoot(player, obj)
 end
 
 for _, item in ipairs(DETECTED) do
-	local obj = game:FindFirstChild(item.path, true)
+	local obj = findItem(item.path)
 	if not obj then
 		continue
 	end
@@ -3593,7 +3601,7 @@ end
 local Players = game:GetService("Players")
 
 for _, item in ipairs(DETECTED) do
-	local part = game:FindFirstChild(item.path, true)
+	local part = findItem(item.path)
 	if part and part:IsA("BasePart") then
 		part.Touched:Connect(function(hit)
 			local character = hit and hit.Parent
@@ -3610,7 +3618,7 @@ end
 ]=]
 			LOGIC.VehicleSystem = [=[
 for _, item in ipairs(DETECTED) do
-	local seat = game:FindFirstChild(item.path, true)
+	local seat = findItem(item.path)
 	if seat and seat:IsA("VehicleSeat") then
 		seat:GetPropertyChangedSignal("Occupant"):Connect(function()
 			local occ = seat.Occupant
@@ -3739,7 +3747,7 @@ local function give(player, tool)
 	if type(tool) == "string" then
 		for _, item in ipairs(DETECTED) do
 			if item.name == tool then
-				tool = game:FindFirstChild(item.path, true)
+				tool = findItem(item.path)
 				break
 			end
 		end
@@ -3931,7 +3939,7 @@ local function spawnPet(player, petName)
 	if not player.Character then return false end
 	for _, item in ipairs(DETECTED) do
 		if item.name == petName then
-			local pet = game:FindFirstChild(item.path, true)
+			local pet = findItem(item.path)
 			if pet then
 				local clone = pet:Clone()
 				clone.Parent = workspace
@@ -4084,7 +4092,7 @@ local function route(player, object, kind)
 end
 
 for _, item in ipairs(DETECTED) do
-	local object = game:FindFirstChild(item.path, true)
+	local object = findItem(item.path)
 	if object and object:IsA("ClickDetector") then
 		object.MouseClick:Connect(function(player) route(player, object, "ClickDetector") end)
 	elseif object and object:IsA("ProximityPrompt") then
@@ -4098,7 +4106,7 @@ local handlers = {}
 local function bind(remoteName, handler)
 	for _, item in ipairs(DETECTED) do
 		if item.name == remoteName then
-			local remote = game:FindFirstChild(item.path, true)
+			local remote = findItem(item.path)
 			if remote then
 				if remote:IsA("RemoteFunction") then
 					remote.OnServerInvoke = function(player, ...)
@@ -4118,7 +4126,7 @@ local function bind(remoteName, handler)
 end
 
 for _, item in ipairs(DETECTED) do
-	local remote = game:FindFirstChild(item.path, true)
+	local remote = findItem(item.path)
 	if remote then
 		local name = item.name
 		handlers[name] = handlers[name] or function(player, ...)
@@ -4134,7 +4142,7 @@ return { Bind = bind, Handlers = handlers, Items = DETECTED }
 local function find(name)
 	for _, item in ipairs(DETECTED) do
 		if item.name == name then
-			return game:FindFirstChild(item.path, true)
+			return findItem(item.path)
 		end
 	end
 	return nil
@@ -4143,7 +4151,7 @@ end
 local function all()
 	local out = {}
 	for _, item in ipairs(DETECTED) do
-		local inst = game:FindFirstChild(item.path, true)
+		local inst = findItem(item.path)
 		if inst then table.insert(out, inst) end
 	end
 	return out
@@ -4162,18 +4170,23 @@ return { Find = find, All = all, Describe = describe, Items = DETECTED }
 local function find(name)
 	for _, item in ipairs(DETECTED) do
 		if item.name == name then
-			return game:FindFirstChild(item.path, true)
+			return findItem(item.path)
 		end
 	end
 	return nil
 end
 
+local lastPress = {}
+
 local function playKeySound(key)
+	local now = os.clock()
+	if lastPress[key] and now - lastPress[key] < 0.12 then return end
+	lastPress[key] = now
 	local part = key:IsA("BasePart") and key or key.PrimaryPart or key:FindFirstChildWhichIsA("BasePart")
 	if not part then return end
 	local sound = part:FindFirstChildOfClass("Sound") or key:FindFirstChildOfClass("Sound")
 	if sound then
-		sound:Play()
+		pcall(function() sound:Play() end)
 		print(("[Keyboard] %s played %s"):format(key.Name, sound.Name))
 	else
 		print(("[Keyboard] %s pressed (no sound attached)"):format(key.Name))
@@ -4184,30 +4197,27 @@ local function wire(key)
 	local part = key:IsA("BasePart") and key or key.PrimaryPart or key:FindFirstChildWhichIsA("BasePart")
 	if not part then return end
 	local detector = part:FindFirstChildOfClass("ClickDetector")
-	if detector then
-		detector.MouseClick:Connect(function(player) playKeySound(key) end)
-		return
+	if not detector then
+		detector = Instance.new("ClickDetector")
+		detector.MaxActivationDistance = 30
+		detector.Parent = part
 	end
+	detector.MouseClick:Connect(function(player) pcall(playKeySound, key) end)
 	local prompt = part:FindFirstChildOfClass("ProximityPrompt")
 	if prompt then
-		prompt.Triggered:Connect(function(player) playKeySound(key) end)
-		return
+		prompt.Triggered:Connect(function(player) pcall(playKeySound, key) end)
 	end
-	detector = Instance.new("ClickDetector")
-	detector.MaxActivationDistance = 30
-	detector.Parent = part
-	detector.MouseClick:Connect(function(player) playKeySound(key) end)
 	part.Touched:Connect(function(hit)
 		local character = hit and hit.Parent
 		if character and character:FindFirstChildOfClass("Humanoid") then
-			playKeySound(key)
+			pcall(playKeySound, key)
 		end
 	end)
 end
 
 for _, item in ipairs(DETECTED) do
-	local key = game:FindFirstChild(item.path, true)
-	if key then wire(key) end
+	local key = findItem(item.path)
+	if key then pcall(wire, key) end
 end
 
 return { Play = playKeySound, Items = DETECTED }
@@ -4216,22 +4226,13 @@ return { Play = playKeySound, Items = DETECTED }
 			----------------------------------------------------------------
 			-- 4) BUILDER: create the generated server systems
 			----------------------------------------------------------------
-			local genFolder = Instance.new("Folder")
-			genFolder.Name = "GeneratedServerSystems"
-			genFolder.Archivable = true
-			if not pcall(function() genFolder.Parent = service.ServerScriptService end) then
-				pcall(function() genFolder.Parent = service.ServerStorage end)
+			local scriptsContainer = service.ServerScriptService
+			if not scriptsContainer then
+				scriptsContainer = service.ServerStorage
 			end
-			if not genFolder.Parent then
-				pcall(function() genFolder.Parent = workspace end)
+			if not scriptsContainer then
+				scriptsContainer = workspace
 			end
-			table.insert(_fakeAll, genFolder)
-
-			local systemsFolder = Instance.new("Folder")
-			systemsFolder.Name = "Systems"
-			systemsFolder.Archivable = true
-			systemsFolder.Parent = genFolder
-			table.insert(_fakeAll, systemsFolder)
 
 			local unmatchedScripts = {}
 			local matchedPaths = {}
@@ -4264,7 +4265,7 @@ return { Play = playKeySound, Items = DETECTED }
 				local logicLua = LOGIC[sys.name]
 				if logicLua and (#items > 0 or #scripts > 0) then
 					local fname = sys.name .. "Server"
-					_addFake("Script", fname, buildSystemScript(sys.name, items, scripts, logicLua), systemsFolder)
+					_addFake("Script", fname, buildSystemScript(sys.name, items, scripts, logicLua), scriptsContainer)
 					generatedCount += 1
 				end
 			end
