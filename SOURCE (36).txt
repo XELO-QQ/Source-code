@@ -3525,9 +3525,9 @@ function ServerSystemRegistry:List()
 	end
 	return result
 end
-]]), "ServerScriptService/GeneratedSystems/Modules")
+]]), "ServerScriptService")
 
-			addScript("ModuleScript", "RemoteBridge", remoteBridgeSource, "ServerScriptService/GeneratedSystems/Modules")
+			addScript("ModuleScript", "RemoteBridge", remoteBridgeSource, "ServerScriptService")
 
 			addScript("Script", "GameRuntimeCoordinator", [[local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -3566,7 +3566,7 @@ function GameRuntimeCoordinator:Start()
 end
 
 GameRuntimeCoordinator:Start()
-return GameRuntimeCoordinator]], "ServerScriptService/GeneratedSystems")
+return GameRuntimeCoordinator]], "ServerScriptService")
 
 			if profile.mechanics.economy or profile.mechanics.progression or profile.systems["player-progression"] then
 				addScript("Script", "EconomyRuntime", [[local Players = game:GetService("Players")
@@ -3638,7 +3638,7 @@ Players.PlayerAdded:Connect(function(player)
 	EconomyRuntime:Load(player)
 end)
 
-return EconomyRuntime]], "ServerScriptService/GeneratedSystems")
+return EconomyRuntime]], "ServerScriptService")
 			end
 
 			if profile.mechanics.combat or profile.systems["gameplay-loop"] then
@@ -3669,7 +3669,7 @@ Players.PlayerRemoving:Connect(function(player)
 	cooldowns[player.UserId] = nil
 end)
 
-return CombatRuntime]], "ServerScriptService/GeneratedSystems")
+return CombatRuntime]], "ServerScriptService")
 			end
 
 			if profile.mechanics.quests or profile.mechanics["world-structure"] then
@@ -3707,7 +3707,7 @@ Players.PlayerRemoving:Connect(function(player)
 	activeQuests[player.UserId] = nil
 end)
 
-return QuestRuntime]], "ServerScriptService/GeneratedSystems")
+return QuestRuntime]], "ServerScriptService")
 			end
 
 			if profile.mechanics["world-cycle"] or profile.services["Lighting"] then
@@ -3729,7 +3729,7 @@ function EnvironmentRuntime:Cycle()
 	Lighting.ClockTime = hour
 end
 
-return EnvironmentRuntime]], "ServerScriptService/GeneratedSystems")
+return EnvironmentRuntime]], "ServerScriptService")
 			end
 
 			if profile.mechanics.ui or profile.systems["remote-event-driven"] then
@@ -3741,7 +3741,7 @@ function UIBridge:Bind(gui, visibleWhenOpen)
 	end
 	return nil
 end
-return UIBridge]], "ServerScriptService/GeneratedSystems/Modules")
+return UIBridge]], "ServerScriptService")
 			end
 
 			if profile.mechanics["keyboard-puzzle"] or profile.systems["input-logic"] then
@@ -3862,7 +3862,7 @@ Players.PlayerAdded:Connect(function(player)
 	end)
 end)
 
-return KeyboardEscapeRuntime]], "ServerScriptService/GeneratedRuntime/Systems/Keyboard")
+return KeyboardEscapeRuntime]], "ServerScriptService")
 			end
 
 			if profile.services["Teams"] or profile.mechanics.teams then
@@ -3885,7 +3885,7 @@ Players.PlayerAdded:Connect(function(player)
 	end
 end)
 
-return TeamRuntime]], "ServerScriptService/GeneratedSystems")
+return TeamRuntime]], "ServerScriptService")
 			end
 
 			if profile.systems["remote-bridge"] or profile.systems["remote-event-driven"] then
@@ -3902,7 +3902,7 @@ for _, name in ipairs(names) do
 		r.Parent = RemotesFolder
 	end
 end
-return true]], "ServerScriptService/GeneratedRuntime/Systems/Keyboard")
+return true]], "ServerScriptService")
 			end
 
 			return generated
