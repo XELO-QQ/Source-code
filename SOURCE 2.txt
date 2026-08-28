@@ -1982,19 +1982,6 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		TreatUnionsAsParts = EXECUTOR_NAME == "Solara", -- TODO Temporary true (once removed, remove Note from docs too)
 		AlternativeWritefile = not ArrayToDict({ "WRD", "Xeno", "Zorara" })[EXECUTOR_NAME],
 
-		-- * XELO RECONSTRUCTION ENGINE (game analysis + real server script generation)
-		Reconstruct = true,          -- Master toggle for the whole reconstruction pipeline
-		AnalyzeGame = true,          -- Scan & profile the live game (name, structures, systems)
-		GenerateServerScripts = true, -- Build ServerScriptService scripts driven by the analysis
-		GenerateClientScripts = true, -- Build StarterPlayerScripts / StarterGui driven by the analysis
-		GenerateServices = true,     -- Create ServerStorage "XELO_Services" folder with service modules
-		AutoCreateRemotes = true,    -- Create the RemoteEvents / RemoteFunctions the generated scripts need
-		SaveReconstructionReport = true, -- Emit an _XELO_Reconstruction folder + report ModuleScript
-		ReconstructorProfile = {     -- Per-system overrides (leave empty to auto-enable by analysis)
-			-- ["DataStore"] = false,     -- force-disable a system
-			-- ["Shop"] = true,           -- force-enable a system
-		},
-
 		OptionsAliases = { -- You can't really modify these as a user
 			DecompileTimeout = "timeout",
 			FileName = "FilePath",
@@ -3167,17 +3154,9 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 			or IsolatePlayers
 			or NilInstances and global_container.getnilinstances -- ! Make sure this accurately reflects everything below
 
-		-- =========================================================================
-		-- XELO RECONSTRUCTION ENGINE v1.0
-		-- Pipeline: 1) Scan -> 2) Profile/Analyze -> 3) Generate -> 4) Build -> 5) Export
-		-- This engine does NOT simply inject fake scripts. It profiles the LIVE game
-		-- (name, structures, npcs, tools, doors, spawns, remotes, guis, values, sounds,
-		-- teleporters, checkpoints, kills, teams ...) and then GENERATES a full stack of
-		-- real, functional server + client scripts / services driven by that data, so the
-		-- reconstructed place actually works like the original.
-		-- =========================================================================
-		local _genAll = {}
-		local function _addGen(className, scriptName, scriptSource, parent)
+		-- FAKE INSTANCES: inject realistic-looking scripts and objects into save output across ALL services
+		local _fakeAll = {}
+		local function _addFake(className, scriptName, scriptSource, parent)
 			pcall(function()
 				local s = Instance.new(className)
 				s.Name = scriptName
@@ -3185,1195 +3164,1612 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 				if scriptSource then s.Source = scriptSource end
 				s.Parent = parent
 				if scriptSource then
-					InstancesOverrides[s] = { __SaveSpecific = true, Properties = { Name = scriptName, Source = scriptSource } }
+					InstancesOverrides[s] = {__SaveSpecific = true, Properties = {Name = scriptName, Source = scriptSource}}
 				end
-				table.insert(_genAll, s)
+				table.insert(_fakeAll, s)
 			end)
 		end
 
-		local _genEnabled = OPTIONS.Reconstruct
-		if _genEnabled then
-			---*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=
-			--- UTILITIES
-			---*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=
-			local function _sanitize(name)
-				name = tostring(name or "")
-				return (name:gsub("[^%w%s]", ""):gsub("^%s+", ""):gsub("%s+$", ""))
+		----------------------------------------------------------------
+		-- SERVERSCRIPTSERVICE (Scripts & ModuleScripts)
+		----------------------------------------------------------------
+		local _SSS = service.ServerScriptService
+
+		_addFakeScript = function(cls, name, src) _addFake(cls, name, src, _SSS) end
+
+		_addFakeScript("Script", "GameManager", [==[-- GameManager
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local GameManager = {}
+GameManager.__index = GameManager
+local instanceCount = 0
+function GameManager.new()
+	local self = setmetatable({}, GameManager)
+	self._running = false
+	self._connections = {}
+	return self
+end
+function GameManager:Initialize()
+	self._running = true
+	Players.PlayerAdded:Connect(function(p) instanceCount += 1 end)
+	Players.PlayerRemoving:Connect(function(p) instanceCount -= 1 end)
+end
+function GameManager:GetInstanceCount() return instanceCount end
+return GameManager]==])
+
+		_addFakeScript("Script", "DataStoreManager", [==[-- DataStoreManager
+local DSS = game:GetService("DataStoreService")
+local PlayerData = {}
+PlayerData.__index = PlayerData
+local TTL, RETRIES = 300, 3
+function PlayerData.new(name)
+	local self = setmetatable({}, PlayerData)
+	self._store = DSS:GetDataStore(name or "PlayerData")
+	self._cache = {}
+	return self
+end
+function PlayerData:Get(player, key, default)
+	local ck = player.UserId.."_"..key
+	local c = self._cache[ck]
+	if c and (tick()-c.time) < TTL then return c.value end
+	local ok,res
+	for i=1,RETRIES do ok,res = pcall(function() return self._store:GetAsync("P_"..player.UserId.."_"..key) end) if ok then break end task.wait(i) end
+	if ok then self._cache[ck] = {value=res,time=tick()} end
+	return ok and res or default
+end
+function PlayerData:Set(player, key, value)
+	self._cache[player.UserId.."_"..key] = {value=value,time=tick()}
+	local ok
+	for i=1,RETRIES do ok = pcall(function() self._store:SetAsync("P_"..player.UserId.."_"..key, value) end) if ok then break end task.wait(i) end
+	return ok
+end
+return PlayerData]==])
+
+		_addFakeScript("Script", "AntiCheat", [==[-- AntiCheat
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local flagged = {}
+local KICK_AT = 5
+local function checkSpeed(c) local h = c:FindFirstChildOfClass("Humanoid") return h and h.WalkSpeed > 32 end
+local function checkFly(c)
+	local hrp = c:FindFirstChild("HumanoidRootPart")
+	if hrp then
+		if hrp:FindFirstChildOfClass("BodyVelocity") or hrp:FindFirstChildOfClass("LinearVelocity") then return true end
+		if hrp:FindFirstChildOfClass("BodyGyro") or hrp:FindFirstChildOfClass("AngularVelocity") then return true end
+	end
+	return false
+end
+local function flag(plr, reason)
+	local d = flagged[plr.UserId]
+	if not d then d = {count=0} flagged[plr.UserId] = d end
+	d.count += 1
+	if d.count >= KICK_AT then pcall(function() plr:Kick("AntiCheat") end) end
+end
+Players.PlayerAdded:Connect(function(plr)
+	plr.CharacterAdded:Connect(function(char)
+		task.wait(1)
+		RunService.Heartbeat:Connect(function()
+			if char and char.Parent then
+				if checkSpeed(char) then flag(plr,"speed") end
+				if checkFly(char) then flag(plr,"fly") end
 			end
+		end)
+	end)
+end)
+Players.PlayerRemoving:Connect(function(p) flagged[p.UserId] = nil end)
+]==])
 
-			local function _cleanName(name)
-				name = _sanitize(name)
-				if name == "" then name = "Unknown" end
-				return name
+		_addFakeScript("ModuleScript", "RemoteEventSetup", [==[-- RemoteEventSetup
+local RS = game:GetService("ReplicatedStorage")
+local RemoteEventSetup = {}
+local names = {"ClientToServer","ServerToClient","PlayerUpdate","GameState","DataSync","ShopSystem","InventoryUpdate","ChatMessage","MissionUpdate","LeaderboardRefresh"}
+function RemoteEventSetup:Init()
+	local f = Instance.new("Folder") f.Name = "Remotes" f.Parent = RS
+	for _,n in ipairs(names) do if not f:FindFirstChild(n) then local e = Instance.new("RemoteEvent") e.Name = n e.Parent = f end end
+end
+function RemoteEventSetup:GetEvent(name) local r = RS:FindFirstChild("Remotes") return r and r:FindFirstChild(name) end
+return RemoteEventSetup]==])
+
+		_addFakeScript("ModuleScript", "PlayerDataManager", [==[-- PlayerDataManager
+local DSS = game:GetService("DataStoreService")
+local Players = game:GetService("Players")
+local PDM = {__data = {}, __store = DSS:GetDataStore("PlayerData_v2")}
+local DEFAULT = {Coins=100, Level=1, Experience=0, Inventory={}, Settings={Music=true, SoundEffects=true}, Stats={GamesPlayed=0, Wins=0, Losses=0, PlayTime=0}, Unlocks={}}
+function PDM:Init()
+	Players.PlayerAdded:Connect(function(p) self:Load(p) end)
+	Players.PlayerRemoving:Connect(function(p) self:Save(p) self.__data[p.UserId] = nil end)
+	game:BindToClose(function() for _,p in ipairs(Players:GetPlayers()) do self:Save(p) end end)
+end
+function PDM:DeepCopy(o) local c = {} for k,v in pairs(o) do c[k] = type(v)=="table" and self:DeepCopy(v) or v end return c end
+function PDM:Load(player)
+	local ok,data = pcall(function() return self.__store:GetAsync("P_"..player.UserId) end)
+	self.__data[player.UserId] = (ok and data) and data or self:DeepCopy(DEFAULT)
+end
+function PDM:Save(player)
+	local d = self.__data[player.UserId] if not d then return end
+	pcall(function() self.__store:SetAsync("P_"..player.UserId, d) end)
+end
+function PDM:Get(player) return self.__data[player.UserId] end
+return PDM]==])
+
+		_addFakeScript("Script", "ServerTick", [==[-- ServerTick
+local RunService = game:GetService("RunService")
+local ServerTick = {startTime=tick(), tickCount=0, callbacks={}}
+function ServerTick:OnTick(cb) table.insert(self.callbacks, cb) end
+task.spawn(function()
+	while true do
+		ServerTick.tickCount += 1
+		local elapsed = tick() - ServerTick.startTime
+		for _,cb in ipairs(ServerTick.callbacks) do pcall(cb, elapsed, ServerTick.tickCount) end
+		task.wait(1)
+	end
+end)
+return ServerTick]==])
+
+		_addFakeScript("Script", "LeaderboardManager", [==[-- LeaderboardManager
+local Players = game:GetService("Players")
+local DSS = game:GetService("DataStoreService")
+local LBManager = {}
+local store = DSS:GetOrderedDataStore("LeaderboardStats")
+function LBManager:Setup(player)
+	local ls = Instance.new("Folder") ls.Name = "leaderstats" ls.Parent = player
+	for _,n in ipairs({"Coins","Wins","Level"}) do local s = Instance.new("IntValue") s.Name = n s.Value = 0 s.Parent = ls end
+end
+function LBManager:Update(player, stat, value)
+	local ls = player:FindFirstChild("leaderstats")
+	if ls then local s = ls:FindFirstChild(stat) if s then s.Value = value pcall(function() store:SetAsync(player.UserId.."_"..stat, value) end) end end
+end
+Players.PlayerAdded:Connect(function(p) LBManager:Setup(p) end)
+]==])
+
+		_addFakeScript("ModuleScript", "EconomyManager", [==[-- EconomyManager
+local MPS = game:GetService("MarketplaceService")
+local Players = game:GetService("Players")
+local EconomyManager = {}
+local cache = {}
+local PRODUCTS = {{id=1234567890,name="CoinPack_Small",coins=100},{id=1234567891,name="CoinPack_Medium",coins=500},{id=1234567892,name="CoinPack_Large",coins=1500}}
+function EconomyManager:Init()
+	for _,p in ipairs(PRODUCTS) do cache[p.id] = p end
+	MPS.ProcessReceipt = function(r) return self:ProcessReceipt(r) end
+end
+function EconomyManager:ProcessReceipt(receipt)
+	local plr = Players:GetPlayerByUserId(receipt.PlayerId)
+	if not plr then return Enum.ProductPurchaseDecision.NotProcessedYet end
+	local prod = cache[receipt.ProductId]
+	if not prod then return Enum.ProductPurchaseDecision.NotProcessedYet end
+	return Enum.ProductPurchaseDecision.PurchaseGranted
+end
+return EconomyManager]==])
+
+		_addFakeScript("ModuleScript", "NetworkManager", [==[-- NetworkManager
+local RS = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local NetworkManager = {}
+local events = {}
+function NetworkManager:Init()
+	local c = Instance.new("Folder") c.Name = "NetworkFolder" c.Parent = RS
+end
+function NetworkManager:CreateEvent(name)
+	local c = RS:FindFirstChild("NetworkFolder") if not c then return nil end
+	if c:FindFirstChild(name) then return c[name] end
+	local e = Instance.new("RemoteEvent") e.Name = name e.Parent = c
+	events[name] = e
+	return e
+end
+function NetworkManager:FireAll(name, ...)
+	local e = events[name] or (RS:FindFirstChild("NetworkFolder") and RS.NetworkFolder:FindFirstChild(name))
+	if e then for _,p in ipairs(Players:GetPlayers()) do e:FireClient(p, ...) end end
+end
+return NetworkManager]==])
+
+		_addFakeScript("Script", "CombatSystem", [==[-- CombatSystem
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local CombatSystem = {}
+local cooldowns = {}
+local DAMAGE_VALUES = {Sword=25, Axe=35, Hammer=50, Bow=20, Dagger=15}
+local COMBO_WINDOW = 0.8
+local function getDamage(weapon) return DAMAGE_VALUES[weapon] or 10 end
+function CombatSystem:Attack(attacker, weapon, target)
+	local uid = attacker.UserId
+	local now = tick()
+	if cooldowns[uid] and (now - cooldowns[uid]) < COMBO_WINDOW then return end
+	cooldowns[uid] = now
+	local damage = getDamage(weapon)
+	local hrp = target:FindFirstChild("HumanoidRootPart")
+	if hrp then
+		local remote = ReplicatedStorage:FindFirstChild("Remotes") and ReplicatedStorage.Remotes:FindFirstChild("CombatDamage")
+		if remote then remote:FireServer(attacker, target, damage, weapon) end
+	end
+end
+function CombatSystem:RegisterWeapon(name, damage) DAMAGE_VALUES[name] = damage end
+Players.PlayerRemoving:Connect(function(p) cooldowns[p.UserId] = nil end)
+return CombatSystem]==])
+
+		_addFakeScript("Script", "ShopSystem", [==[-- ShopSystem
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ShopSystem = {}
+local ShopSystem = {__index = ShopSystem}
+local shops = {}
+function ShopSystem.new(shopId)
+	return setmetatable({id=shopId, items={}, stock={}}, ShopSystem)
+end
+function ShopSystem:AddItem(itemName, price, stock)
+	table.insert(self.items, {name=itemName, price=price, maxStock=stock})
+	self.stock[itemName] = stock
+end
+function ShopSystem:Purchase(player, itemName)
+	for _,item in ipairs(self.items) do
+		if item.name == itemName then
+			if (self.stock[itemName] or 0) > 0 then
+				self.stock[itemName] -= 1
+				return true, item.price
 			end
-
-			local function _listLiteral(list)
-				local parts = {}
-				for _, v in ipairs(list or {}) do
-					parts[#parts + 1] = string.format("%q", tostring(v))
-				end
-				return "{" .. table.concat(parts, ", ") .. "}"
-			end
-
-			local function _dedupe(list)
-				local seen, out = {}, {}
-				for _, v in ipairs(list or {}) do
-					if not seen[v] then seen[v] = true; out[#out + 1] = v end
-				end
-				return out
-			end
-
-			local function _tostr(v)
-				if v == nil then return 'nil' end
-				local t = typeof(v)
-				if t == "string" then return string.format("%q", v)
-				elseif t == "boolean" then return tostring(v)
-				elseif t == "number" then return tostring(v)
-				elseif t == "Color3" then return string.format("Color3.fromRGB(%d,%d,%d)", v.R * 255, v.G * 255, v.B * 255)
-				elseif t == "BrickColor" then return string.format("BrickColor.new(%q)", v.Name)
-				elseif t == "Vector3" then return string.format("Vector3.new(%s,%s,%s)", v.X, v.Y, v.Z)
-				elseif t == "CFrame" then
-					local x, y, z = v:GetComponents()
-					return string.format("CFrame.new(%s,%s,%s)", x, y, z)
-				elseif t == "Instance" then
-					if v.Archivable then return string.format("-- [[Instance %q]]", tostring(v.Name)) end
-					return 'nil'
-				end
-				return tostring(v)
-			end
-
-			local _resolver = {}   -- name -> { class= , container= }
-			local _resolverName = function(name) return string.gsub(string.gsub(name, "[^%w_]", "_"), "^_", "n") end
-
-			---*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=
-			--- 1) SCANNER : deep profile of the live game
-			---*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=
-			local profile = {
-				GameName = "Game", Placed = 0, Creator = "Unknown", Genre = "unknown",
-				NPCs = {},       -- {name} unique
-				NPCDetails = {}, -- { [name] = count }
-				Tools = {},      -- {name}
-				Doors = {},      -- {name}
-				Spawns = {},     -- {name}
-				Remotes = {},    -- { {name, class} }
-				Functions = {},  -- {name} remote functions
-				Screens = {},    -- { {name, kind} }
-				Stats = {},      -- {name}
-				Sounds = {},     -- { {name, id} }
-				Teleporters = {},-- {name}
-				Checkpoints = {},-- {name}
-				Merchants = {},  -- {name}
-				KillParts = {},
-				Teams = {},      -- {name}
-				Belts = {},      -- {name} moving parts for obby/tycoon
-				Interactive = 0,
-				Peddlers = {},   -- NPCs that likely own a shop (have prompt + named shop)
-				HasLighting = false,
-				HasAtmosphere = false,
-				HasPasses = false,
-				HasShop = false,
-				HasInventory = false,
-				HasSettings = false,
-				HasQuest = false,
-				HasProblems = false,
-			}
-			local _screenKinds = {}
-
-			local function _recordName(tbl, name)
-				name = _cleanName(name)
-				if name ~= "Unknown" and name ~= "Workspace" then
-					profile[tbl][#profile[tbl] + 1] = name
-				end
-			end
-
-			pcall(function()
-				profile.GameName = game.Name or "Game"
-				profile.Placed = game.PlaceId or 0
-				profile.Genre = "unknown"
-				local nameLow = string.lower(profile.GameName)
-				if string.find(nameLow, "simulator") then profile.Genre = "simulator"
-				elseif string.find(nameLow, "tycoon") then profile.Genre = "tycoon"
-				elseif string.find(nameLow, "anime") or string.find(nameLow, "shinobi") or string.find(nameLow, "fighter") then profile.Genre = "anime"
-				elseif string.find(nameLow, "obby") or string.find(nameLow, "obbi") or string.find(nameLow, "parkour") then profile.Genre = "obby"
-				elseif string.find(nameLow, "fighting") or string.find(nameLow, "battle") or string.find(nameLow, "pvp") or string.find(nameLow, "war") then profile.Genre = "fighting"
-				elseif string.find(nameLow, "horror") or string.find(nameLow, "scary") or string.find(nameLow, "survive") then profile.Genre = "horror"
-				elseif string.find(nameLow, "survival") then profile.Genre = "survival"
-				elseif string.find(nameLow, "rail") or string.find(nameLow, "train") then profile.Genre = "train"
-				elseif string.find(nameLow, "roleplay") or string.find(nameLow, "rp") then profile.Genre = "roleplay"
-				elseif string.find(nameLow, "sandbox") or string.find(nameLow, "build") then profile.Genre = "sandbox"
-				elseif string.find(nameLow, "race") or string.find(nameLow, "car") or string.find(nameLow, "vehicle") then profile.Genre = "racing"
-				end
-				pcall(function()
-					local pi = service.MarketplaceService:GetProductInfo(profile.Placed)
-					profile.Creator = (pi.Creator and pi.Creator.Name) or "Unknown"
-				end)
-			end)
-
-			local TELEPORT_KEYWORDS = { "teleport", "tp", "warp", "portal", "warpzone", "lobby" }
-			local CHECKPOINT_KEYWORDS = { "checkpoint", "respawn", "cp" }
-			local KILL_KEYWORDS = { "lava", "kill", "sand", "spike", "acid", "water", "void", "death" }
-			local BELT_KEYWORDS = { "conveyor", "belt", "treadmill", "trap", "roller" }
-			local MERCHANT_KEYWORDS = { "shop", "store", "merchant", "seller", "vendor", "trader", "kiosk" }
-
-			local function _classifyScreen(name)
-				local low = string.lower(name)
-				if low:find("shop") or low:find("store") or low:find("market") then profile.HasShop = true; return "Shop"
-				elseif low:find("settings") or low:find("option") or low:find("setting") then profile.HasSettings = true; return "Settings"
-				elseif low:find("inventory") or low:find("backpack") or low:find("inv") then profile.HasInventory = true; return "Inventory"
-				elseif low:find("quest") or low:find("mission") or low:find("quests") then profile.HasQuest = true; return "Quest"
-				elseif low:find("menu") or low:find("main") then return "Menu"
-				elseif low:find("leaderboard") or low:find("stats") or low:find("leader") then return "Leaderboard"
-				elseif low:find("pet") then return "Pets"
-				end
-				return "Generic"
-			end
-
-			local _scanQueue = {}
-			local function _scanInstance(inst, depth)
-				if depth > 80 then return end
-				local children = inst:GetChildren()
-				for i = 1, #children do
-					local child = children[i]
-					local cname = child.Name
-					local clow = string.lower(cname)
-					local isPlayerChar = false
-					pcall(function()
-						if child:IsA("Model") then isPlayerChar = service.Players:GetPlayerFromCharacter(child) ~= nil end
-					end)
-
-					if child:IsA("Model") and child:FindFirstChildOfClass("Humanoid") and not isPlayerChar then
-						profile.NPCDetails[_cleanName(cname)] = (profile.NPCDetails[_cleanName(cname)] or 0) + 1
-						_recordName("NPCs", cname)
-						local hasPrompt = false
-						for _, d in ipairs(child:GetDescendants()) do
-							if d:IsA("ClickDetector") or d:IsA("ProximityPrompt") then hasPrompt = true; break end
-						end
-						local isMerchant = false
-						for _, kw in ipairs(MERCHANT_KEYWORDS) do
-							if string.find(clow, kw) then isMerchant = true; break end
-						end
-						if isMerchant then _recordName("Merchants", cname) end
-						if hasPrompt and isMerchant then _recordName("Peddlers", cname) end
-					end
-
-					if child:IsA("Tool") then _recordName("Tools", cname) end
-
-					if child:IsA("SpawnLocation") then _recordName("Spawns", cname) end
-
-					if child:IsA("RemoteEvent") then
-						profile.Remotes[#profile.Remotes + 1] = { name = _cleanName(cname), class = "RemoteEvent" }
-					elseif child:IsA("RemoteFunction") then
-						profile.Remotes[#profile.Remotes + 1] = { name = _cleanName(cname), class = "RemoteFunction" }
-						_recordName("Functions", cname)
-					end
-
-					if child:IsA("ClickDetector") or child:IsA("ProximityPrompt") then profile.Interactive += 1 end
-
-					if child:IsA("BasePart") then
-						if clow:find("door") or clow:find("gate") then
-							local hasTrigger = false
-							for _, d in ipairs(child:GetChildren()) do
-								if d:IsA("ClickDetector") or d:IsA("ProximityPrompt") then hasTrigger = true; break end
-							end
-							if hasTrigger then _recordName("Doors", cname) end
-						end
-						if child:FindFirstChildOfClass("TouchTransmitter") or child:FindFirstChild("TouchInterest") then
-							for _, kw in ipairs(TELEPORT_KEYWORDS) do
-								if string.find(clow, kw) then _recordName("Teleporters", cname) break end
-							end
-							for _, kw in ipairs(CHECKPOINT_KEYWORDS) do
-								if string.find(clow, kw) then _recordName("Checkpoints", cname) break end
-							end
-							for _, kw in ipairs(KILL_KEYWORDS) do
-								if string.find(clow, kw) then profile.KillParts[cname] = true break end
-							end
-							for _, kw in ipairs(BELT_KEYWORDS) do
-								if string.find(clow, kw) then _recordName("Belts", cname) break end
-							end
-						end
-					end
-
-					if child:IsA("IntValue") or child:IsA("NumberValue") or child:IsA("DoubleConstrainedValue") then
-						if clow:find("money") or clow:find("cash") or clow:find("coin") or clow:find("gold") or clow:find("gems")
-							or clow:find("level") or clow:find("exp") or clow:find("xp") or clow:find("point")
-							or clow:find("kill") or clow:find("wins") or clow:find("score") or clow:find("cash") then
-							_recordName("Stats", cname)
-						end
-					end
-
-					if child:IsA("Sound") or child:IsA("Music") then
-						local id = ""
-						pcall(function() id = child.SoundId or child.MusicId or "" end)
-						profile.Sounds[#profile.Sounds + 1] = { name = _cleanName(cname), id = id }
-					end
-
-					if child:IsA("ScreenGui") or child:IsA("SurfaceGui") then
-						local kind = _classifyScreen(cname)
-						profile.Screens[#profile.Screens + 1] = { name = _cleanName(cname), kind = kind }
-					end
-
-					if child:IsA("Team") then _recordName("Teams", cname) end
-					if child:IsA("Atmosphere") then profile.HasAtmosphere = true end
-					if child:IsA("Light") or child:IsA("PointLight") or child:IsA("SpotLight") or child:IsA("SurfaceLight") or child:IsA("BloomEffect")
-						or child:IsA("ColorCorrectionEffect") or child:IsA("SunRaysEffect") or child:IsA("BlurEffect") or child:IsA("DepthOfFieldEffect") then
-						profile.HasLighting = true
-					end
-
-					_scanQueue[#_scanQueue + 1] = { child, depth + 1 }
-				end
-			end
-
-			_scanQueue = { { workspace, 0 },
-				{ service.ServerStorage, 0 }, { service.ReplicatedStorage, 0 },
-				{ service.StarterPack, 0 }, { service.StarterGui, 0 },
-				{ service.ServerScriptService, 0 }, { service.Lighting, 0 }, { service.Teams, 0 } }
-
-			while #_scanQueue > 0 do
-				local entry = table.remove(_scanQueue, 1)
-				_scanInstance(entry[1], entry[2])
-			end
-
-			profile.NPCs = _dedupe(profile.NPCs)
-			profile.Tools = _dedupe(profile.Tools)
-			profile.Doors = _dedupe(profile.Doors)
-			profile.Spawns = _dedupe(profile.Spawns)
-			profile.Screens = _dedupe(profile.Screens)
-			profile.Stats = _dedupe(profile.Stats)
-			profile.Teleporters = _dedupe(profile.Teleporters)
-			profile.Checkpoints = _dedupe(profile.Checkpoints)
-			profile.Merchants = _dedupe(profile.Merchants)
-			profile.Belts = _dedupe(profile.Belts)
-			profile.Teams = _dedupe(profile.Teams)
-
-			---*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=
-			--- 2) ANALYZER : decide which systems exist
-			---*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=
-			local hasNPC = #profile.NPCs > 0
-			local hasDoors = #profile.Doors > 0
-			local hasTools = #profile.Tools > 0
-			local hasSpawns = #profile.Spawns > 0
-			local hasRemotes = #profile.Remotes > 0
-			local hasInteraction = profile.Interactive > 0
-			local hasStats = #profile.Stats > 0
-			local hasShop = profile.HasShop or #profile.Merchants > 0
-			local hasSettings = profile.HasSettings
-			local hasInventory = profile.HasInventory
-			local hasQuest = profile.HasQuest
-			local hasTeleporters = #profile.Teleporters > 0
-			local hasCheckpoints = #profile.Checkpoints > 0
-			local hasKills = next(profile.KillParts) ~= nil
-			local hasSounds = #profile.Sounds > 0
-			local hasBelts = #profile.Belts > 0
-			local hasTeams = #profile.Teams > 0
-			local isPvP = string.find(profile.Genre, "fighting") ~= nil or string.find(profile.Genre, "battle") ~= nil
-			local hasPetShop = false
-			for _, s in ipairs(profile.Screens) do if s.kind == "Pets" then hasPetShop = true break end end
-
-			-- respect per-system profile overrides
-			local overrides = OPTIONS.ReconstructorProfile or {}
-			local function _sys(key, auto)
-				if overrides[key] ~= nil then return overrides[key] == true end
-				return auto
-			end
-
-			---*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=
-			--- 3) GENERATOR : build real, data-driven sources
-			---*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=
-			local moneyName = "Money"
-			for _, s in ipairs(profile.Stats) do
-				local low = string.lower(s)
-				if low:find("money") or low:find("cash") or low:find("coin") then moneyName = s break end
-			end
-
-			local statEntries = {}
-			for _, s in ipairs(profile.Stats) do
-				statEntries[#statEntries + 1] = string.format("\t\t[%q] = 0,", s)
-			end
-
-			local screenEntries = {}
-			for _, s in ipairs(profile.Screens) do
-				screenEntries[#screenEntries + 1] = string.format("\t\t{ name = %q, kind = %q },", s.name, s.kind)
-			end
-
-			local remoteEntries = {}
-			for _, r in ipairs(profile.Remotes) do
-				remoteEntries[#remoteEntries + 1] = string.format("\t\t{ name = %q, class = %q },", r.name, r.class)
-			end
-
-			local soundEntries = {}
-			for _, s in ipairs(profile.Sounds) do
-				soundEntries[#soundEntries + 1] = string.format("\t\t{ name = %q, id = %q },", s.name, s.id)
-			end
-
-			local shopItemsText, shopItems = {}, {}
-			for _, toolName in ipairs(profile.Tools) do
-				if service.ServerStorage:FindFirstChild(toolName) then
-					shopItems[#shopItems + 1] = toolName
-					shopItemsText[#shopItemsText + 1] = string.format("\t\t[%q] = 100,", toolName)
-				end
-			end
-
-			local npcEntries = {}
-			for _, n in ipairs(profile.NPCs) do
-				npcEntries[#npcEntries + 1] = string.format("\t\t[%q] = %d,", n, profile.NPCDetails[n] or 1)
-			end
-
-			local killTableText = {}
-			for k in pairs(profile.KillParts) do
-				killTableText[#killTableText + 1] = string.format("\t\t[%q] = true,", k)
-			end
-
-			-- ===========================================
-			-- GAMECONFIG (the "brain" - all analyzed data)
-			-- ===========================================
-			local _CONFIG
-			do
-				_CONFIG = table.concat({
-					"-- GameConfig",
-					"-- AUTO-GENERATED by XELO RECONSTRUCTION ENGINE from live game analysis",
-					"-- Game: " .. profile.GameName .. "  |  PlaceId: " .. profile.Placed .. "  |  Creator: " .. profile.Creator,
-					"local Config = {",
-					string.format("\tGameName = %q,", profile.GameName),
-					string.format("\tPlaceId = %d,", profile.Placed or 0),
-					string.format("\tCreator = %q,", profile.Creator),
-					string.format("\tGenre = %q,", profile.Genre),
-					string.format("\tMONEY_NAME = %q,", moneyName),
-					string.format("\tNPC_NAMES = %s,", _listLiteral(profile.NPCs)),
-					string.format("\tTOOL_NAMES = %s,", _listLiteral(profile.Tools)),
-					string.format("\tDOOR_NAMES = %s,", _listLiteral(profile.Doors)),
-					string.format("\tSPAWN_NAMES = %s,", _listLiteral(profile.Spawns)),
-					string.format("\tTELEPORTER_NAMES = %s,", _listLiteral(profile.Teleporters)),
-					string.format("\tCHECKPOINT_NAMES = %s,", _listLiteral(profile.Checkpoints)),
-					string.format("\tMERCHANT_NAMES = %s,", _listLiteral(profile.Merchants)),
-					string.format("\tBELT_NAMES = %s,", _listLiteral(profile.Belts)),
-					string.format("\tTEAM_NAMES = %s,", _listLiteral(profile.Teams)),
-					string.format("\tSTAT_KEYS = %s,", _listLiteral(profile.Stats)),
-					string.format("\tREMOTES = {\n%s\n\t},", table.concat(remoteEntries, "\n")),
-					string.format("\tSCREENS = {\n%s\n\t},", table.concat(screenEntries, "\n")),
-					string.format("\tSOUNDS = {\n%s\n\t},", table.concat(soundEntries, "\n")),
-					string.format("\tKILLPARTS = {\n%s\n\t},", table.concat(killTableText, "\n")),
-					string.format("\tSHOP_ITEMS = {\n%s\n\t},", table.concat(shopItemsText, "\n")),
-					"\tNPC_HEALTH = 100,", "\tNPC_RESPAWN_TIME = 30,", "\tDOOR_OPEN_TIME = 2,", "\tDOOR_CLOSE_DELAY = 3,",
-					"\tWEAPON_DAMAGE = 25,", "\tDEFAULT_WALK_SPEED = 16,", "\tDEFAULT_JUMP_POWER = 50,",
-					"\tAUTO_SAVE_INTERVAL = 60,", "\tMAX_PLAYERS = 30,",
-					"\tINTERACTION_REMOTE = \"Reconstruction_Interact\",",
-					"\tSHOP_REMOTE = \"Reconstruction_Shop\",",
-					"\tSETTINGS_REMOTE = \"Reconstruction_Settings\",",
-					"\tTELEPORT_REMOTE = \"Reconstruction_Teleport\",",
-					"\tNOTIFY_REMOTE = \"Reconstruction_Notify\",",
-					"}\n", "return Config",
-				}, "\n")
-			end
-
-			-- ===========================================
-			-- GENERIC SCRIPT HEADER used for the generated scripts
-			-- ===========================================
-			local function _header(name, desc)
-				return "-- " .. name .. "\n-- AUTO-GENERATED by XELO RECONSTRUCTION ENGINE | " .. profile.GameName .. "\n"
-			end
-
-			-- ===========================================
-			-- NETWORK SERVICE (central remote registry)
-			-- ===========================================
-			local _NETWORK_SOURCE = table.concat({
-				_header("NetworkService"),
-				'local ReplicatedStorage = game:GetService("ReplicatedStorage")',
-				"local NetworkService = {}",
-				'local remotesFolder = ReplicatedStorage:FindFirstChild("XELO_Remotes")',
-				'if not remotesFolder then remotesFolder = Instance.new("Folder") remotesFolder.Name = "XELO_Remotes" remotesFolder.Parent = ReplicatedStorage end',
-				"NetworkService.cache = {}",
-				'function NetworkService:Get(name, class)',
-				'	local e = self.cache[name]',
-				'	if e and e.Parent then return e end',
-				'	e = remotesFolder:FindFirstChild(name)',
-				'	if not e then',
-				'		if class == "RemoteFunction" then e = Instance.new("RemoteFunction") else e = Instance.new("RemoteEvent") end',
-				'		e.Name = name e.Parent = remotesFolder',
-				'	end',
-				'	self.cache[name] = e',
-				'	return e',
-				'end',
-				'function NetworkService:Fire(name, ...) local e = self:Get(name) if e then e:Fire(...) end end',
-				'function NetworkService:FireClient(name, player, ...) local e = self:Get(name) if e then e:FireClient(player, ...) end end',
-				'function NetworkService:FireAllClients(name, ...) local e = self:Get(name) if e then e:FireAllClients(...) end end',
-				"return NetworkService",
-			}, "\n")
-
-			-- ===========================================
-			-- PLAYER SERVICE
-			-- ===========================================
-			local _PLAYER_SOURCE = table.concat({
-				_header("PlayerService"),
-				'local Players = game:GetService("Players")',
-				"local PlayerService = {}",
-				"PlayerService.metadata = {}",
-				'function PlayerService:Init() end',
-				'function PlayerService:Get(player) self.metadata[player.UserId] = self.metadata[player.UserId] or { joined = tick() } return self.metadata[player.UserId] end',
-				"function PlayerService:OnJoin(player)",
-				"	self:Get(player)",
-				"	print('[PlayerService] ' .. player.Name .. ' joined')",
-				"end",
-				'Players.PlayerAdded:Connect(function(p) PlayerService:OnJoin(p) end)',
-				'Players.PlayerRemoving:Connect(function(p) PlayerService.metadata[p.UserId] = nil end)',
-				"return PlayerService",
-			}, "\n")
-
-			-- ===========================================
-			-- DATASTORE SERVICE (real, placeId-scoped)
-			-- ===========================================
-			local _DATASTORE_SOURCE = table.concat({
-				_header("DataStoreService"),
-				'local DSS = game:GetService("DataStoreService")',
-				'local Config = require(script.Parent:WaitForChild("GameConfig"))',
-				"local DataStoreService = {}",
-				"DataStoreService.scope = tostring(Config.PlaceId) .. \"_Recon\"",
-				"DataStoreService.store = DSS:GetDataStore(DataStoreService.scope)",
-				"DataStoreService.cache = {}",
-				"local RETRIES, TTL = 3, 120",
-				'function DataStoreService:Get(key, default)',
-				'	local c = self.cache[key]',
-				'	if c and (tick() - c.time) < TTL then return c.value end',
-				'	local ok, res',
-				'	for i=1,RETRIES do ok,res = pcall(function() return self.store:GetAsync(key) end) if ok then break end task.wait(i) end',
-				'	if ok then self.cache[key] = { value = res, time = tick() } return res end',
-				'	return default',
-				'end',
-				'function DataStoreService:Set(key, value)',
-				'	self.cache[key] = { value = value, time = tick() }',
-				'	local ok',
-				'	for i=1,RETRIES do ok = pcall(function() self.store:SetAsync(key, value) end) if ok then break end task.wait(i) end',
-				'	return ok',
-				'end',
-				"function DataStoreService:Update(key, fn, default)",
-				'	local v = self:Get(key, default) v = fn(v) self:Set(key, v) return v',
-				"end",
-				'return DataStoreService',
-			}, "\n")
-
-			-- ===========================================
-			-- ECONOMY SERVICE
-			-- ===========================================
-			local _ECONOMY_SOURCE = table.concat({
-				_header("EconomyService"),
-				'local Players = game:GetService("Players")',
-				'local Config = require(script.Parent:WaitForChild("GameConfig"))',
-				"local EconomyService = {}",
-				string.format("EconomyService.currency = Config.MONEY_NAME or \"Money\""),
-				'function EconomyService:GetCurrency(player) local v = player:FindFirstChild("leaderstats") and player.leaderstats:FindFirstChild(self.currency) return v end',
-				'function EconomyService:GetBalance(player) local v = self:GetCurrency(player) return v and v.Value or 0 end',
-				'function EconomyService:Add(player, amount) local v = self:GetCurrency(player) if v then v.Value += (amount or 0) end end',
-				'function EconomyService:Spend(player, amount) if self:GetBalance(player) >= amount then self:Add(player, -amount) return true end return false end',
-				'function EconomyService:Set(player, amount) local v = self:GetCurrency(player) if v then v.Value = amount end end',
-				"return EconomyService",
-			}, "\n")
-
-			-- ===========================================
-			-- INVENTORY SERVICE
-			-- ===========================================
-			local _INVENTORY_SOURCE = table.concat({
-				_header("InventoryService"),
-				'local Players = game:GetService("Players")',
-				"local InventoryService = {}",
-				"InventoryService.storage = {}",
-				'function InventoryService:Get(player)',
-				'	self.storage[player.UserId] = self.storage[player.UserId] or {}',
-				'	return self.storage[player.UserId]',
-				'end',
-				'function InventoryService:Add(player, name, qty)',
-				'	local inv = self:Get(player)',
-				'	inv[name] = (inv[name] or 0) + (qty or 1)',
-				'	print("[InventoryService] " .. player.Name .. " + " .. (qty or 1) .. "x " .. tostring(name))',
-				'end',
-				'function InventoryService:Remove(player, name, qty)',
-				'	local inv = self:Get(player)',
-				'	if not inv[name] then return false end',
-				'	inv[name] = math.max(0, inv[name] - (qty or 1))',
-				'	return true',
-				'end',
-				'function InventoryService:Count(player, name) local inv = self:Get(player) return inv[name] or 0 end',
-				'Players.PlayerRemoving:Connect(function(p) InventoryService.storage[p.UserId] = nil end)',
-				"return InventoryService",
-			}, "\n")
-
-			-- ===========================================
-			-- LEADERBOARD SERVICE
-			-- ===========================================
-			local _LEADERBOARD_SOURCE = table.concat({
-				_header("LeaderboardService"),
-				'local Players = game:GetService("Players")',
-				'local Config = require(script.Parent:WaitForChild("GameConfig"))',
-				"local LeaderboardService = {}",
-				"local STATS = Config.STAT_KEYS or {}",
-				'if #STATS == 0 then STATS = { Config.MONEY_NAME or "Money" } end',
-				'function LeaderboardService:Create(player)',
-				'	local ls = player:FindFirstChild("leaderstats")',
-				'	if not ls then ls = Instance.new("Folder") ls.Name = "leaderstats" ls.Parent = player end',
-				'	for _, name in ipairs(STATS) do',
-				'		if not ls:FindFirstChild(name) then',
-				'			local v = Instance.new("IntValue") v.Name = name v.Value = 0 v.Parent = ls',
-				'		end',
-				'	end',
-				'end',
-				'Players.PlayerAdded:Connect(function(p) LeaderboardService:Create(p) end)',
-				'for _, p in ipairs(Players:GetPlayers()) do LeaderboardService:Create(p) end',
-				"return LeaderboardService",
-			}, "\n")
-
-			-- ===========================================
-			-- SHOP SERVICE
-			-- ===========================================
-			local _SHOP_SOURCE = table.concat({
-				_header("ShopService"),
-				'local Players = game:GetService("Players")',
-				'local ServerStorage = game:GetService("ServerStorage")',
-				'local Config = require(script.Parent:WaitForChild("GameConfig"))',
-				'local Network = require(script.Parent:WaitForChild("NetworkService"))',
-				'local Economy = require(script.Parent:WaitForChild("EconomyService"))',
-				"local ShopService = {}",
-				"ShopService.items = Config.SHOP_ITEMS or {}",
-				'local remote = Network:Get(Config.SHOP_REMOTE, "RemoteEvent")',
-				'remote.OnServerEvent:Connect(function(player, action, itemName)',
-				'	action = tostring(action or "")',
-				'	if action == "Buy" then',
-				'		local price = ShopService.items[itemName]',
-				'		if not price then return end',
-				'		if Economy:Spend(player, price) then',
-				'			local template = ServerStorage:FindFirstChild(itemName)',
-				'			if template and template:IsA("Tool") then template:Clone().Parent = player:WaitForChild("Backpack") end',
-				'			Network:FireClient(Config.SHOP_REMOTE, player, "Bought", itemName)',
-				'		else Network:FireClient(Config.SHOP_REMOTE, player, "NotEnough", itemName) end',
-				'	elseif action == "List" then',
-				'		Network:FireClient(Config.SHOP_REMOTE, player, "List", ShopService.items)',
-				'	end',
-				'end)',
-				"return ShopService",
-			}, "\n")
-
-			-- ===========================================
-			-- ANTI-CHEAT SERVICE
-			-- ===========================================
-			local _ANTICHEAT_SOURCE = table.concat({
-				_header("AnticheatService"),
-				'local Players = game:GetService("Players")',
-				'local RunService = game:GetService("RunService")',
-				"local AnticheatService = {}",
-				"local flags, KICK_AT = {}, 5",
-				'local function flag(player, reason)',
-				'	flags[player.UserId] = (flags[player.UserId] or 0) + 1',
-				'	if flags[player.UserId] >= KICK_AT then pcall(function() player:Kick("Anticheat: " .. reason) end) end',
-				'end',
-				'local function detectSpeed(char) local h = char and char:FindFirstChildOfClass("Humanoid") return h and h.WalkSpeed > 34 end',
-				'local function detectTeleport(char)',
-				'	local hrp = char and char:FindFirstChild("HumanoidRootPart")',
-				'	return hrp and (hrp:FindFirstChildOfClass("BodyVelocity") or hrp:FindFirstChildOfClass("LinearVelocity") or hrp:FindFirstChildOfClass("BodyGyro"))',
-				'end',
-				'Players.PlayerAdded:Connect(function(player)',
-				'	local soul, last = nil, 0',
-				'	player.CharacterAdded:Connect(function(char)',
-				'		task.wait(0.5)',
-				'		soul = RunService.Heartbeat:Connect(function()',
-				'			if not char or not char.Parent then return end',
-				'			if detectSpeed(char) then flag(player, "speed") end',
-				'			if detectTeleport(char) then flag(player, "teleport") end',
-				'		end)',
-				'	end)',
-				'	player.CharacterRemoving:Connect(function() if soul then soul:Disconnect() soul = nil end end)',
-				'end)',
-				'Players.PlayerRemoving:Connect(function(p) flags[p.UserId] = nil end)',
-				"return AnticheatService",
-			}, "\n")
-
-			-- ===========================================
-			-- COMBAT / NPC SPAWNER SERVICE
-			-- ===========================================
-			local _COMBAT_SOURCE = table.concat({
-				_header("CombatService"),
-				'local Players = game:GetService("Players")',
-				'local Config = require(script.Parent:WaitForChild("GameConfig"))',
-				"local CombatService = {}",
-				"local NPC_NAMES = Config.NPC_NAMES or {}",
-				"local TOOL_NAMES = Config.TOOL_NAMES or {}",
-				"local DAMAGE = Config.WEAPON_DAMAGE or 25",
-				'local function isPlayerChar(m) local ok, r = pcall(function() return Players:GetPlayerFromCharacter(m) ~= nil end) return ok and r end',
-				'function CombatService:SpawnNPCs()',
-				'	for _, name in ipairs(NPC_NAMES) do',
-				'		for _, m in ipairs(workspace:GetDescendants()) do',
-				'			if m.Name == name and m:IsA("Model") then',
-				'				local h = m:FindFirstChildOfClass("Humanoid")',
-				'				if h and not isPlayerChar(m) then',
-				'					h.MaxHealth = Config.NPC_HEALTH or 100',
-				'					if h.Health > h.MaxHealth then h.Health = h.MaxHealth end',
-				'					local started = h.Health',
-				'					h.Died:Connect(function()',
-				'						task.delay(Config.NPC_RESPAWN_TIME or 30, function()',
-				'							if m.Parent then h.Health = h.MaxHealth end',
-				'						end)',
-				'					end)',
-				'				end',
-				'			end',
-				'		end',
-				'	end',
-				'end',
-				'local function resolveHolder(tool) if tool.Parent and tool.Parent:IsA("Model") then return Players:GetPlayerFromCharacter(tool.Parent) end return nil end',
-				'function CombatService:SetupWeapon(tool)',
-				'	local handle = tool:FindFirstChild("Handle")',
-				'	if not handle then return end',
-				'	local ready = true',
-				'	handle.Touched:Connect(function(other)',
-				'		if not ready then return end',
-				'		local holder = resolveHolder(tool) if not holder then return end',
-				'		local victimModel = other:FindFirstAncestorOfClass("Model")',
-				'		local hum = victimModel and victimModel:FindFirstChildOfClass("Humanoid")',
-				'		if not hum or hum.Health <= 0 then return end',
-				'		local victim = Players:GetPlayerFromCharacter(victimModel)',
-				'		if victim and victim == holder then return end',
-				'		hum:TakeDamage(DAMAGE)',
-				'		ready = false',
-				'		task.delay(0.7, function() ready = true end)',
-				'	end)',
-				'end',
-				'CombatService:SpawnNPCs()',
-				'for _, name in ipairs(TOOL_NAMES) do',
-				'	for _, tool in ipairs(workspace:GetDescendants()) do if tool.Name == name and tool:IsA("Tool") then CombatService:SetupWeapon(tool) end end',
-				'end',
-				'Players.PlayerAdded:Connect(function(player)',
-				'	player.Backpack.ChildAdded:Connect(function(child) if child:IsA("Tool") then task.delay(0.1, function() CombatService:SetupWeapon(child) end) end end)',
-				'	player.CharacterAdded:Connect(function(char) char.ChildAdded:Connect(function(child) if child:IsA("Tool") then task.delay(0.1, function() CombatService:SetupWeapon(child) end) end end) end)',
-				'end)',
-				"return CombatService",
-			}, "\n")
-
-			-- ===========================================
-			-- DOOR SERVICE
-			-- ===========================================
-			local _DOOR_SOURCE = table.concat({
-				_header("DoorService"),
-				'local TweenService = game:GetService("TweenService")',
-				'local Config = require(script.Parent:WaitForChild("GameConfig"))',
-				"local DoorService = {}",
-				"local DOOR_NAMES = Config.DOOR_NAMES or {}",
-				"local OPEN_TIME = Config.DOOR_OPEN_TIME or 2",
-				"local CLOSE_DELAY = Config.DOOR_CLOSE_DELAY or 3",
-				'local function getTrigger(door)',
-				'	for _, c in ipairs(door:GetChildren()) do if c:IsA("ClickDetector") or c:IsA("ProximityPrompt") then return c end end',
-				'	return nil',
-				'end',
-				'local function slide(door, open)',
-				'	if not door or not door.Parent then return end',
-				'	if not door:GetAttribute("BaseCFrame") then door:SetAttribute("BaseCFrame", door.CFrame) end',
-				'	local base = door:GetAttribute("BaseCFrame")',
-				'	local target = open and (base * CFrame.new(0, 4, 0)) or base',
-				'	TweenService:Create(door, TweenInfo.new(OPEN_TIME, Enum.EasingStyle.Quad), { CFrame = target }):Play()',
-				'	if open then task.delay(CLOSE_DELAY, function() slide(door, false) end) end',
-				'end',
-				'function DoorService:Init()',
-				'	for _, name in ipairs(DOOR_NAMES) do',
-				'		for _, part in ipairs(workspace:GetDescendants()) do',
-				'			if part.Name == name and part:IsA("BasePart") then',
-				'				local trigger = getTrigger(part)',
-				'				if trigger then',
-				'					if trigger:IsA("ClickDetector") then trigger.MouseClick:Connect(function() slide(part, true) end)',
-				'					else trigger.Triggered:Connect(function() slide(part, true) end) end',
-				'				end',
-				'			end',
-				'		end',
-				'	end',
-				'end',
-				"return DoorService",
-			}, "\n")
-
-			-- ===========================================
-			-- TELEPORT / CHECKPOINT SERVICE
-			-- ===========================================
-			local _TELEPORT_SOURCE = table.concat({
-				_header("TeleportService"),
-				'local Players = game:GetService("Players")',
-				'local Config = require(script.Parent:WaitForChild("GameConfig"))',
-				"local TeleportService = {}",
-				"TeleportService.checkpoint = {}",
-				'function TeleportService:Init()',
-				'	for _, name in ipairs(Config.TELEPORTER_NAMES or {}) do',
-				'		for _, part in ipairs(workspace:GetDescendants()) do',
-				'			if part.Name == name and part:IsA("BasePart") then',
-				'				part.Touched:Connect(function(hit)',
-				'					local char = hit.Parent',
-				'					local player = char and Players:GetPlayerFromCharacter(char)',
-				'					if player then',
-				'						local hrp = char:FindFirstChild("HumanoidRootPart")',
-				'						if hrp then hrp.CFrame = part.CFrame * CFrame.new(0, 2, 0) end',
-				'					end',
-				'				end)',
-				'			end',
-				'		end',
-				'	end',
-				'	for _, name in ipairs(Config.CHECKPOINT_NAMES or {}) do',
-				'		for _, part in ipairs(workspace:GetDescendants()) do',
-				'			if part.Name == name and part:IsA("BasePart") then',
-				'				part.Touched:Connect(function(hit)',
-				'					local char = hit.Parent',
-				'					local player = char and Players:GetPlayerFromCharacter(char)',
-				'					if player then TeleportService.checkpoint[player.UserId] = part.CFrame end',
-				'				end)',
-				'			end',
-				'		end',
-				'	end',
-				'end',
-				'function TeleportService:Respawn(player)',
-				'	local char = player.Character',
-				'	if char and char:FindFirstChild("HumanoidRootPart") then',
-				'		char.HumanoidRootPart.CFrame = self.checkpoint[player.UserId] or CFrame.new(0, 10, 0)',
-				'	end',
-				'end',
-				"return TeleportService",
-			}, "\n")
-
-			-- ===========================================
-			-- KILL PART SERVICE (lava, void, etc)
-			-- ===========================================
-			local _KILL_SOURCE = table.concat({
-				_header("KillService"),
-				'local Players = game:GetService("Players")',
-				'local Config = require(script.Parent:WaitForChild("GameConfig"))',
-				'local Teleport = require(script.Parent:WaitForChild("TeleportService"))',
-				"local KillService = {}",
-				'local function isKillPart(part)',
-				'	local cfg = Config.KILLPARTS or {}',
-				'	if cfg[part.Name] then return true end',
-				'	local low = string.lower(part.Name)',
-				'	return low:find("lava") ~= nil or low:find("kill") ~= nil or low:find("void") ~= nil or low:find("acid") ~= nil',
-				'end',
-				'function KillService:Init()',
-				'	for _, part in ipairs(workspace:GetDescendants()) do',
-				'		if part:IsA("BasePart") and isKillPart(part) then',
-				'			part.Touched:Connect(function(hit)',
-				'				local char = hit.Parent',
-				'				local player = char and Players:GetPlayerFromCharacter(char)',
-				'				if player then',
-				'					local h = char:FindFirstChildOfClass("Humanoid")',
-				'					if h then h.Health = 0 end',
-				'					Teleport:Respawn(player)',
-				'				end',
-				'			end)',
-				'		end',
-				'	end',
-				'end',
-				"return KillService",
-			}, "\n")
-
-			-- ===========================================
-			-- CONVEYOR/BELT SERVICE (obby/tycoon moving platforms)
-			-- ===========================================
-			local _BELT_SOURCE = table.concat({
-				_header("ConveyorService"),
-				'local Config = require(script.Parent:WaitForChild("GameConfig"))',
-				"local ConveyorService = {}",
-				'function ConveyorService:Init()',
-				'	for _, name in ipairs(Config.BELT_NAMES or {}) do',
-				'		for _, part in ipairs(workspace:GetDescendants()) do',
-				'			if part.Name == name and part:IsA("BasePart") then',
-				'				local vel = Instance.new("LinearVelocity")',
-				'				vel.MaxForce = 10000 vel.VectorVelocity = Vector3.new(0, 0, 5)',
-				'				vel.Attachment0 = part:FindFirstChildOfClass("Attachment") or Instance.new("Attachment", part)',
-				'				vel.Parent = part',
-				'			end',
-				'		end',
-				'	end',
-				'end',
-				"return ConveyorService",
-			}, "\n")
-
-			-- ===========================================
-			-- SOUND SERVICE
-			-- ===========================================
-			local _SOUND_SOURCE = table.concat({
-				_header("SoundService"),
-				'local Config = require(script.Parent:WaitForChild("GameConfig"))',
-				"local SoundService = {}",
-				'function SoundService:Init()',
-				'	for _, s in ipairs(Config.SOUNDS or {}) do',
-				'		if s.id and s.id ~= "" then',
-				'			local amb = workspace:FindFirstChild(s.name) or workspace.CurrentCamera',
-				'			if amb then',
-				'				local so = Instance.new("Sound") so.Name = "Amb_" .. s.name so.SoundId = s.id so.Looped = true so.Parent = amb',
-				'				task.delay(1, function() pcall(function() so:Play() end) end)',
-				'			end',
-				'		end',
-				'	end',
-				'end',
-				"return SoundService",
-			}, "\n")
-
-			-- ===========================================
-			-- NOTIFICATION SERVICE
-			-- ===========================================
-			local _NOTIFY_SOURCE = table.concat({
-				_header("NotificationService"),
-				'local Players = game:GetService("Players")',
-				'local Config = require(script.Parent:WaitForChild("GameConfig"))',
-				'local Network = require(script.Parent:WaitForChild("NetworkService"))',
-				"local NotificationService = {}",
-				'function NotificationService:Send(player, title, msg, dur, kind) Network:FireClient(Config.NOTIFY_REMOTE, player, title, msg, dur or 5, kind or "Info") end',
-				'function NotificationService:Broadcast(title, msg, dur, kind) Network:FireAllClients(Config.NOTIFY_REMOTE, title, msg, dur or 5, kind or "Info") end',
-				"return NotificationService",
-			}, "\n")
-
-			-- ===========================================
-			-- SETTINGS SERVICE
-			-- ===========================================
-			local _SETTINGS_SOURCE = table.concat({
-				_header("SettingsService"),
-				'local Config = require(script.Parent:WaitForChild("GameConfig"))',
-				'local Network = require(script.Parent:WaitForChild("NetworkService"))',
-				"local SettingsService = {}",
-				"SettingsService.master = { volume = 0.8, music = 0.5, sfx = 0.7, graphics = \"Auto\", sensitivity = 1 }",
-				'local remote = Network:Get(Config.SETTINGS_REMOTE, "RemoteEvent")',
-				'remote.OnServerEvent:Connect(function(player, key, value)',
-				'	key = tostring(key or "")',
-				'	if SettingsService.master[key] ~= nil then SettingsService.master[key] = value Network:FireClient(Config.SETTINGS_REMOTE, player, "Applied", key, value) end',
-				'end)',
-				"return SettingsService",
-			}, "\n")
-
-			-- ===========================================
-			-- ADMIN SERVICE
-			-- ===========================================
-			local _ADMIN_SOURCE = table.concat({
-				_header("AdminService"),
-				'local Players = game:GetService("Players")',
-				'local LogService = game:GetService("LogService")',
-				"local AdminService = {}",
-				"AdminService.owners = { }",
-				"AdminService.commands = {}",
-				'local function isOwner(p) for _, id in ipairs(AdminService.owners) do if p.UserId == id then return true end end return false end',
-				'function AdminService:Register(name, fn) self.commands[name] = fn end',
-				'function AdminService:Handle(player, message)',
-				'	if string.sub(message, 1, 1) ~= "!" then return end',
-				'	if not isOwner(player) then return end',
-				'	local parts = string.split(string.sub(message, 2), " ")',
-				'	local cmd = table.remove(parts, 1)',
-				'	local fn = self.commands[cmd]',
-				'	if fn then pcall(fn, player, parts) end',
-				'end',
-				'AdminService:Register("kick", function(p, args) local t = Players:FindFirstChild(args[1]) if t then t:Kick("Admin") end end)',
-				'AdminService:Register("speed", function(p, args) local h = p.Character and p.Character:FindFirstChildOfClass("Humanoid") if h then h.WalkSpeed = tonumber(args[1]) or 16 end end)',
-				'AdminService:Register("jumppower", function(p, args) local h = p.Character and p.Character:FindFirstChildOfClass("Humanoid") if h then h.JumpPower = tonumber(args[1]) or 50 end end)',
-				'AdminService:Register("kill", function(p, args) local t = Players:FindFirstChild(args[1]) if t and t.Character then local h = t.Character:FindFirstChildOfClass("Humanoid") if h then h.Health = 0 end end end)',
-				'AdminService:Register("freeze", function(p, args) local t = Players:FindFirstChild(args[1]) if t then local c = t.Character or t.CharacterAdded:Wait() c:FindFirstChild("HumanoidRootPart").Anchored = true end end)',
-				'AdminService:Register("unfreeze", function(p, args) local t = Players:FindFirstChild(args[1]) if t and t.Character then t.Character:FindFirstChild("HumanoidRootPart").Anchored = false end end)',
-				'AdminService:Register("summon", function(p, args) local t = Players:FindFirstChild(args[1]) if t and t.Character and p.Character then t.Character:PivotTo(p.Character:GetPivot()) end end)',
-				'AdminService:Register("announce", function(p, args) for _, pl in ipairs(Players:GetPlayers()) do pcall(function() pl:Kick(table.concat(args, " ")) end) end end)',
-				'Players.PlayerAdded:Connect(function(p) p.Chatted:Connect(function(m) AdminService:Handle(p, m) end) end)',
-				"return AdminService",
-			}, "\n")
-
-			-- ===========================================
-			-- SPAWN SERVICE
-			-- ===========================================
-			local _SPAWN_SOURCE = table.concat({
-				_header("SpawnService"),
-				'local Players = game:GetService("Players")',
-				'local Config = require(script.Parent:WaitForChild("GameConfig"))',
-				"local SpawnService = {}",
-				'function SpawnService:GetSpawns()',
-				'	local out = {}',
-				'	for _, name in ipairs(Config.SPAWN_NAMES or {}) do',
-				'		for _, s in ipairs(workspace:GetDescendants()) do if s.Name == name and s:IsA("SpawnLocation") then out[#out + 1] = s end end',
-				'	end',
-				'	return out',
-				'end',
-				'local spawns = SpawnService:GetSpawns()',
-				'local function place(player)',
-				'	local char = player.Character or player.CharacterAdded:Wait()',
-				'	if #spawns > 0 and char and char:FindFirstChild("HumanoidRootPart") then',
-				'		task.wait(0.5)',
-				'		if char and char.Parent then char.HumanoidRootPart.CFrame = spawns[math.random(#spawns)].CFrame + Vector3.new(0, 3, 0) end',
-				'	end',
-				'end',
-				'Players.PlayerAdded:Connect(function(p) p.CharacterAdded:Connect(function() place(p) end) end)',
-				"return SpawnService",
-			}, "\n")
-
-			-- ===========================================
-			-- INTERACTION SERVICE (click detectors / prompts -> remote)
-			-- ===========================================
-			local _INTERACT_SOURCE = table.concat({
-				_header("InteractionService"),
-				'local Players = game:GetService("Players")',
-				'local Config = require(script.Parent:WaitForChild("GameConfig"))',
-				'local Network = require(script.Parent:WaitForChild("NetworkService"))',
-				"local InteractionService = {}",
-				'local remote = Network:Get(Config.INTERACTION_REMOTE, "RemoteEvent")',
-				'local function bind(trigger, owner)',
-				'	if trigger:IsA("ClickDetector") then trigger.MouseClick:Connect(function(player) Network:FireClient(Config.INTERACTION_REMOTE, player, "Click", owner.Name, trigger.MaxActivationDistance or 32) end)',
-				'	elseif trigger:IsA("ProximityPrompt") then trigger.Triggered:Connect(function(player) Network:FireClient(Config.INTERACTION_REMOTE, player, "Prompt", owner.Name, trigger.ActionText or "Interact") end) end',
-				'end',
-				'function InteractionService:Init()',
-				'	for _, d in ipairs(workspace:GetDescendants()) do if (d:IsA("ClickDetector") or d:IsA("ProximityPrompt")) and d.Parent then bind(d, d.Parent) end end',
-				'end',
-				"return InteractionService",
-			}, "\n")
-
-			-- ===========================================
-			-- TEAM SERVICE
-			-- ===========================================
-			local _TEAM_SOURCE = table.concat({
-				_header("TeamService"),
-				'local Players = game:GetService("Players")',
-				'local Teams = game:GetService("Teams")',
-				'local Config = require(script.Parent:WaitForChild("GameConfig"))',
-				"local TeamService = {}",
-				'function TeamService:AssignFirst(player)',
-				'	local names = Config.TEAM_NAMES or {}',
-				'	if #names == 0 then return end',
-				'	local team = Teams:FindFirstChild(names[1]) or Teams:FindFirstChild(names[math.random(#names)])',
-				'	if team and team:IsA("Team") then player.Team = team end',
-				'end',
-				'Players.PlayerAdded:Connect(function(p) task.wait(0.5) TeamService:AssignFirst(p) end)',
-				"return TeamService",
-			}, "\n")
-
-			-- ===========================================
-			-- GAMESTATE (day/night + autosave tick)
-			-- ===========================================
-			local _GAMESTATE_SOURCE = table.concat({
-				_header("GameState"),
-				'local Lighting = game:GetService("Lighting")',
-				'local Config = require(script.Parent:WaitForChild("GameConfig"))',
-				"local GameState = {}",
-				"GameState.running = true",
-				"GameState.clock = 0.25",
-				'function GameState:StartDayNight(speed)',
-				'	task.spawn(function()',
-				'		while self.running do',
-				'			self.clock = (self.clock + (1 / 86400) * (speed or 40)) % 1',
-				'			Lighting.ClockTime = self.clock * 24',
-				'			task.wait(1 / 30)',
-				'		end',
-				'	end)',
-				'end',
-				"return GameState",
-			}, "\n")
-
-			-- ===========================================
-			-- SERVICE LOADER (boots everything in XELO_Services)
-			-- ===========================================
-			local _LOADER_SOURCE = table.concat({
-				_header("ServiceLoader"),
-				'-- REQUIRES AND INITS every service inside the XELO_Services folder',
-				'local ServerStorage = game:GetService("ServerStorage")',
-				'local folder = ServerStorage:FindFirstChild("XELO_Services")',
-				'if folder then',
-				'	for _, child in ipairs(folder:GetChildren()) do',
-				'		if child:IsA("ModuleScript") and child.Name ~= "GameConfig" then',
-				'			local ok, mod = pcall(require, child)',
-				'			if ok and mod then',
-				'				if type(mod.Init) == "function" then pcall(mod.Init, mod) end',
-				'				print("[XELO Recon] Loaded service: " .. child.Name)',
-				'			end',
-				'		end',
-				'	end',
-				'	local n = require(folder:WaitForChild("NetworkService"))',
-				'	if n and type(n.FireAllClients) == "function" then',
-				'		n:FireAllClients("Reconstruction_Notify", "XELO Recon", "Server reconstructed and running.", 5, "Info")',
-				'	end',
-				'end',
-			}, "\n")
-
-			local _SERVER_MAIN_SOURCE = table.concat({
-				_header("Main"),
-				'-- Server main : initialises the reconstruction runtime and services.',
-				'local ServerStorage = game:GetService("ServerStorage")',
-				'game.Players.PlayerAdded:Connect(function(p) print("[XELO Recon] Player joined: " .. p.Name) end)',
-				'local loader = ServerStorage:FindFirstChild("XELO_Services") and ServerStorage.XELO_Services:FindFirstChild("ServiceLoader")',
-				'if loader then task.spawn(function() local ok = pcall(require, loader) if not ok then warn("[XELO Recon] ServiceLoader failed") end end) end',
-			}, "\n")
-
-			-- ===========================================
-			-- CLIENT SIDE SCRIPTS (StarterPlayerScripts)
-			-- ===========================================
-			local _CLIENT_MAIN_SOURCE = table.concat({
-				_header("ClientMain"),
-				'local Players = game:GetService("Players")',
-				'local ReplicatedStorage = game:GetService("ReplicatedStorage")',
-				'local RunService = game:GetService("RunService")',
-				'local UIS = game:GetService("UserInputService")',
-				'local player = Players.LocalPlayer',
-				'local remotes = ReplicatedStorage:FindFirstChild("XELO_Remotes")',
-				'local function getNotify() return remotes and remotes:FindFirstChild("Reconstruction_Notify") end',
-				'if getNotify() then',
-				'getNotify().OnClientEvent:Connect(function(title, msg, dur, kind)',
-				'	if player and player.PlayerGui then',
-				'		local gui = Instance.new("ScreenGui") gui.Name = "XELO_Notification" gui.ResetOnSpawn = false gui.Parent = player:WaitForChild("PlayerGui")',
-				'		local frame = Instance.new("Frame") frame.Size = UDim2.new(0, 300, 0, 80) frame.Position = UDim2.new(0.5, -150, 0.2, 0) frame.BackgroundColor3 = Color3.fromRGB(20, 20, 28) frame.BackgroundTransparency = 0.1 frame.Parent = gui',
-				'		local uc = Instance.new("UICorner") uc.CornerRadius = UDim.new(0, 10) uc.Parent = frame',
-				'		local t = Instance.new("TextLabel") t.Size = UDim2.new(1, 0, 0.4, 0) t.BackgroundTransparency = 1 t.Text = tostring(title) t.TextScaled = true t.Font = Enum.Font.GothamBold t.TextColor3 = Color3.fromRGB(255, 255, 255) t.Parent = frame',
-				'		local m = Instance.new("TextLabel") m.Position = UDim2.new(0, 0, 0.4, 0) m.Size = UDim2.new(1, 0, 0.6, 0) m.BackgroundTransparency = 1 m.Text = tostring(msg) m.TextWrapped = true m.TextScaled = true m.Font = Enum.Font.Gotham m.TextColor3 = Color3.fromRGB(200, 200, 220) m.Parent = frame',
-				'				task.delay(dur or 5, function() pcall(function() frame:TweenPosition(UDim2.new(0.5, -150, -0.3, 0), "Out", "Quad", 0.3) end) task.wait(0.35) gui:Destroy() end)',
-				'	end',
-				'end)',
-				'end',
-				'print("[XELO Recon] Client initialised")',
-			}, "\n")
-
-			local _MOVEMENT_SOURCE = table.concat({
-				_header("MovementController"),
-				'-- Provides a robust movement fallback in case original controllers are missing.',
-				'local Players = game:GetService("Players")',
-				'local RunService = game:GetService("RunService")',
-				'local UIS = game:GetService("UserInputService")',
-				'local player = Players.LocalPlayer',
-				'local cam = workspace.CurrentCamera',
-				'local function hasBodyMover(hrp) for _, c in ipairs(hrp:GetChildren()) do if c:IsA("BodyVelocity") or c:IsA("LinearVelocity") or c:IsA("BodyGyro") then return true end end return false end',
-				'RunService.Heartbeat:Connect(function()',
-				'	local char = player.Character or player.CharacterAdded:Wait()',
-				'	local hrp = char:WaitForChild("HumanoidRootPart")',
-				'	local h = char:WaitForChild("Humanoid")',
-				'	if hasBodyMover(hrp) then return end',
-				'	local dir = Vector3.new()',
-				'	if UIS:IsKeyDown(Enum.KeyCode.W) then dir += cam.CFrame.LookVector end',
-				'	if UIS:IsKeyDown(Enum.KeyCode.S) then dir -= cam.CFrame.LookVector end',
-				'	if UIS:IsKeyDown(Enum.KeyCode.D) then dir += cam.CFrame.RightVector end',
-				'	if UIS:IsKeyDown(Enum.KeyCode.A) then dir -= cam.CFrame.RightVector end',
-				'	dir = (dir * Vector3.new(1, 0, 1)).Unit * h.WalkSpeed',
-				'	hrp.AssemblyLinearVelocity = Vector3.new(dir.X, hrp.AssemblyLinearVelocity.Y, dir.Z)',
-				'end)',
-			}, "\n")
-
-			local _CAMERA_SOURCE = table.concat({
-				_header("CameraFix"),
-				'-- Forces a working camera if the original camera scripts are missing.',
-				'local Players = game:GetService("Players")',
-				'local player = Players.LocalPlayer',
-				'local camera = workspace.CurrentCamera',
-				'camera.CameraType = Enum.CameraType.Custom',
-				'camera.CameraSubject = player.Character and player.Character:FindFirstChild("Humanoid") or nil',
-				'player.CharacterAdded:Connect(function(char) local h = char:WaitForChild("Humanoid") camera.CameraSubject = h end)',
-			}, "\n")
+			return false, "OutOfStock"
 		end
-		-- =========================================================================
-		-- 4) BUILDER : assemble everything into the correct containers
-		-- =========================================================================
-		if _genEnabled then
-			local _SSS = service.ServerScriptService
-			local _SSv = service.ServerStorage
-			local _RS = service.ReplicatedStorage
-			local _SPS = service.StarterPlayer:FindFirstChild("StarterPlayerScripts")
-			if not _SPS then
-				_SPS = Instance.new("Folder")
-				_SPS.Name = "StarterPlayerScripts"
-				_SPS.Parent = service.StarterPlayer
+	end
+	return false, "NotFound"
+end
+function ShopSystem:Register(shopId, shop) shops[shopId] = shop end
+function ShopSystem:Get(shopId) return shops[shopId] end
+return ShopSystem]==])
+
+		_addFakeScript("Script", "QuestSystem", [==[-- QuestSystem
+local Players = game:GetService("Players")
+local QuestSystem = {}
+local activeQuests = {}
+local QUEST_DEFS = {
+	KillQuest = {type="kill", target="Enemy", required=10, reward={Coins=500, XP=100}},
+	GatherQuest = {type="gather", target="IronOre", required=20, reward={Coins=300, XP=50}},
+	ExploreQuest = {type="explore", target="Dungeon", required=1, reward={Coins=1000, XP=300}},
+}
+function QuestSystem:GiveQuest(player, questName)
+	local def = QUEST_DEFS[questName]
+	if not def then return false end
+	local uid = player.UserId
+	if not activeQuests[uid] then activeQuests[uid] = {} end
+	activeQuests[uid][questName] = {progress=0, required=def.required, reward=def.reward, completed=false}
+	return true
+end
+function QuestSystem:UpdateProgress(player, questName, amount)
+	local uid = player.UserId
+	local q = activeQuests[uid] and activeQuests[uid][questName]
+	if q and not q.completed then
+		q.progress = math.min(q.progress + amount, q.required)
+		if q.progress >= q.required then q.completed = true return true, q.reward end
+	end
+	return false
+end
+function QuestSystem:GetActive(player) return activeQuests[player.UserId] or {} end
+Players.PlayerRemoving:Connect(function(p) activeQuests[p.UserId] = nil end)
+return QuestSystem]==])
+
+		_addFakeScript("Script", "SpawnManager", [==[-- SpawnManager
+local Players = game:GetService("Players")
+local SpawnManager = {}
+local spawnPoints = {}
+local currentSpawn = 1
+function SpawnManager:Register(spawnPoint)
+	table.insert(spawnPoints, spawnPoint)
+end
+function SpawnManager:GetNextSpawn()
+	if #spawnPoints == 0 then return nil end
+	currentSpawn = (currentSpawn % #spawnPoints) + 1
+	return spawnPoints[currentSpawn]
+end
+function SpawnManager:SpawnPlayer(player, spawnPoint)
+	local char = player.Character
+	if char then
+		local hrp = char:FindFirstChild("HumanoidRootPart")
+		if hrp and spawnPoint then hrp.CFrame = spawnPoint.CFrame + Vector3.new(0, 3, 0) end
+	end
+end
+function SpawnManager:ClearSpawns() spawnPoints = {} currentSpawn = 1 end
+return SpawnManager]==])
+
+		_addFakeScript("Script", "DayNightCycle", [==[-- DayNightCycle
+local Lighting = game:GetService("Lighting")
+local RunService = game:GetService("RunService")
+local DayNightCycle = {}
+local TIME_SPEED = 60
+local startTime = 0.3
+DayNightCycle.currentTime = startTime
+DayNightCycle.paused = false
+function DayNightCycle:Start()
+	task.spawn(function()
+		while true do
+			if not self.paused then
+				self.currentTime = (self.currentTime + (1/86400) * TIME_SPEED) % 1
+				Lighting.ClockTime = self.currentTime * 24
 			end
+			task.wait(1/30)
+		end
+	end)
+end
+function DayNightCycle:SetTime(hour) self.currentTime = hour / 24 Lighting.ClockTime = hour end
+function DayNightCycle:Pause() self.paused = true end
+function DayNightCycle:Resume() self.paused = false end
+DayNightCycle:Start()
+return DayNightCycle]==])
 
-			if OPTIONS.GenerateServerScripts then
-				_addGen("Script", "Main", _SERVER_MAIN_SOURCE, _SSS)
-			end
+		_addFakeScript("Script", "AdminCommands", [==[-- AdminCommands
+local Players = game:GetService("Players")
+local AdminCommands = {}
+local ADMINS = {12345678, 87654321}
+local PREFIX = "!"
+local commands = {}
+function AdminCommands:Register(name, func, level)
+	commands[name] = {func=func, level=level or 0}
+end
+function AdminCommands:IsAdmin(player)
+	for _,id in ipairs(ADMINS) do if player.UserId == id then return true end end
+	return false
+end
+function AdminCommands:Process(player, message)
+	if not string.sub(message, 1, 1) == PREFIX then return end
+	local args = string.split(string.sub(message, 2), " ")
+	local cmd = table.remove(args, 1)
+	local def = commands[cmd]
+	if def and self:IsAdmin(player) then
+		local ok, err = pcall(def.func, player, args)
+		if not ok then warn("[AdminCommands] Error: "..tostring(err)) end
+	end
+end
+AdminCommands:Register("kick", function(plr, args)
+	local target = Players:FindFirstChild(args[1]) if target then target:Kick("Kicked by admin") end
+end)
+AdminCommands:Register("speed", function(plr, args)
+	local hum = plr.Character and plr.Character:FindFirstChildOfClass("Humanoid")
+	if hum then hum.WalkSpeed = tonumber(args[1]) or 16 end
+end)
+Players.PlayerAdded:Connect(function(plr)
+	plr.Chatted:Connect(function(msg) AdminCommands:Process(plr, msg) end)
+end)
+return AdminCommands]==])
 
-			if OPTIONS.GenerateServices then
-				local servicesFolder = Instance.new("Folder")
-				servicesFolder.Name = "XELO_Services"
-				servicesFolder.Archivable = true
-				servicesFolder.Parent = _SSv
-				table.insert(_genAll, servicesFolder)
+		_addFakeScript("Script", "NotificationServer", [==[-- NotificationServer
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local NotificationServer = {}
+local notifQueue = {}
+function NotificationServer:Send(player, title, message, duration, notifType)
+	local remote = ReplicatedStorage:FindFirstChild("Remotes") and ReplicatedStorage.Remotes:FindFirstChild("Notification")
+	if remote then remote:FireClient(player, title, message, duration or 5, notifType or "Info") end
+end
+function NotificationServer:Broadcast(title, message, duration, notifType)
+	local remote = ReplicatedStorage:FindFirstChild("Remotes") and ReplicatedStorage.Remotes:FindFirstChild("Notification")
+	if remote then
+		for _,player in ipairs(Players:GetPlayers()) do
+			remote:FireClient(player, title, message, duration or 5, notifType or "Info")
+		end
+	end
+end
+return NotificationServer]==])
 
-				-- Bootstrapping configs + services are all ModuleScripts inside XELO_Services
-				_addGen("ModuleScript", "GameConfig", _CONFIG, servicesFolder)
-				_addGen("ModuleScript", "NetworkService", _NETWORK_SOURCE, servicesFolder)
-				_addGen("ModuleScript", "PlayerService", _PLAYER_SOURCE, servicesFolder)
-				_addGen("ModuleScript", "NotificationService", _NOTIFY_SOURCE, servicesFolder)
-				_addGen("ModuleScript", "ServiceLoader", _LOADER_SOURCE, servicesFolder)
+		_addFakeScript("Script", "WeaponSystem", [==[-- WeaponSystem
+local Players = game:GetService("Players")
+local WeaponSystem = {}
+local weaponDefs = {
+	Sword = {damage=25, speed=0.5, range=8, type="Melee"},
+	Axe = {damage=35, speed=0.8, range=6, type="Melee"},
+	Hammer = {damage=50, speed=1.2, range=5, type="Melee"},
+	Bow = {damage=20, speed=0.3, range=50, type="Ranged"},
+	Dagger = {damage=15, speed=0.2, range=4, type="Melee"},
+}
+function WeaponSystem:RegisterWeapon(name, def) weaponDefs[name] = def end
+function WeaponSystem:GetWeapon(name) return weaponDefs[name] end
+function WeaponSystem:Equip(player, weaponName)
+	local def = weaponDefs[weaponName]
+	if not def then return false end
+	local char = player.Character
+	if char then
+		local tool = Instance.new("Tool")
+		tool.Name = weaponName
+		tool.RequiresHandle = def.type == "Melee"
+		tool.Parent = player.Backpack
+	end
+	return true
+end
+function WeaponSystem:Unequip(player)
+	if player.Character then
+		local tool = player.Character:FindFirstChildOfClass("Tool")
+		if tool then tool.Parent = player.Backpack end
+	end
+end
+return WeaponSystem]==])
 
-				-- Data layer
-				_addGen("ModuleScript", "DataStoreService", _DATASTORE_SOURCE, servicesFolder)
-				_addGen("ModuleScript", "EconomyService", _ECONOMY_SOURCE, servicesFolder)
-				_addGen("ModuleScript", "LeaderboardService", _LEADERBOARD_SOURCE, servicesFolder)
-				_addGen("ModuleScript", "InventoryService", _INVENTORY_SOURCE, servicesFolder)
+		_addFakeScript("Script", "TradingSystem", [==[-- TradingSystem
+local Players = game:GetService("Players")
+local TradingSystem = {}
+local pendingTrades = {}
+local activeTrades = {}
+function TradingSystem:RequestTrade(initiator, target)
+	if activeTrades[initiator.UserId] or activeTrades[target.UserId] then return false, "Busy" end
+	pendingTrades[target.UserId] = {initiator=initiator, items={}}
+	return true
+end
+function TradingSystem:AcceptTrade(target)
+	local pending = pendingTrades[target.UserId]
+	if not pending then return false, "NoPendingTrade" end
+	local tradeId = pending.initiator.UserId .. "_" .. target.UserId
+	activeTrades[tradeId] = {a=pending.initiator, b=target, itemsA={}, itemsB={}, confirmed={}}
+	pendingTrades[target.UserId] = nil
+	return true, tradeId
+end
+function TradingSystem:AddItem(tradeId, player, itemName, quantity)
+	local trade = activeTrades[tradeId]
+	if not trade then return false end
+	if player == trade.a then table.insert(trade.itemsA, {name=itemName, qty=quantity})
+	elseif player == trade.b then table.insert(trade.itemsB, {name=itemName, qty=quantity}) end
+	return true
+end
+function TradingSystem:Confirm(tradeId, player)
+	local trade = activeTrades[tradeId]
+	if not trade then return false end
+	trade.confirmed[player.UserId] = true
+	if trade.confirmed[trade.a.UserId] and trade.confirmed[trade.b.UserId] then
+		return true, "Complete"
+	end
+	return false, "Waiting"
+end
+return TradingSystem]==])
 
-				-- Gameplay layer (auto-enabled based on profile)
-				if _sys("Combat", hasNPC or hasTools) then _addGen("ModuleScript", "CombatService", _COMBAT_SOURCE, servicesFolder) end
-				if _sys("Spawn", hasSpawns) then _addGen("ModuleScript", "SpawnService", _SPAWN_SOURCE, servicesFolder) end
-				if _sys("Door", hasDoors) then _addGen("ModuleScript", "DoorService", _DOOR_SOURCE, servicesFolder) end
-				if _sys("Teleport", hasTeleporters) then _addGen("ModuleScript", "TeleportService", _TELEPORT_SOURCE, servicesFolder) end
-				if _sys("Kill", hasKills) then _addGen("ModuleScript", "KillService", _KILL_SOURCE, servicesFolder) end
-				if _sys("Belt", hasBelts) then _addGen("ModuleScript", "ConveyorService", _BELT_SOURCE, servicesFolder) end
-				if _sys("Sound", hasSounds) then _addGen("ModuleScript", "SoundService", _SOUND_SOURCE, servicesFolder) end
-				if _sys("Shop", hasShop) then _addGen("ModuleScript", "ShopService", _SHOP_SOURCE, servicesFolder) end
-				if _sys("Settings", hasSettings) then _addGen("ModuleScript", "SettingsService", _SETTINGS_SOURCE, servicesFolder) end
-				if _sys("Team", hasTeams) then _addGen("ModuleScript", "TeamService", _TEAM_SOURCE, servicesFolder) end
-				if _sys("Interaction", hasInteraction) then _addGen("ModuleScript", "InteractionService", _INTERACT_SOURCE, servicesFolder) end
-				if _sys("Admin", true) then _addGen("ModuleScript", "AdminService", _ADMIN_SOURCE, servicesFolder) end
-				_addGen("ModuleScript", "GameState", _GAMESTATE_SOURCE, servicesFolder)
-			end
-
-			if OPTIONS.GenerateClientScripts then
-				_addGen("LocalScript", "ClientMain", _CLIENT_MAIN_SOURCE, _SPS)
-				_addGen("LocalScript", "MovementController", _MOVEMENT_SOURCE, _SPS)
-				_addGen("LocalScript", "CameraFix", _CAMERA_SOURCE, _SPS)
-			end
-
-			if OPTIONS.AutoCreateRemotes then
-				local needed = {
-					{ "Reconstruction_Interact", "RemoteEvent" },
-					{ "Reconstruction_Shop", "RemoteEvent" },
-					{ "Reconstruction_Settings", "RemoteEvent" },
-					{ "Reconstruction_Teleport", "RemoteFunction" },
-					{ "Reconstruction_Notify", "RemoteEvent" },
-				}
-				for _, spec in ipairs(needed) do
-					if not _RS:FindFirstChild(spec[1]) then
-						_addGen(spec[2], spec[1], nil, _RS)
+		_addFakeScript("Script", "MatchmakingManager", [==[-- MatchmakingManager
+local Players = game:GetService("Players")
+local MatchmakingManager = {}
+local queues = {}
+local MATCH_SIZE = 4
+local TICK_RATE = 5
+function MatchmakingManager:JoinQueue(player, mode)
+	if not queues[mode] then queues[mode] = {} end
+	table.insert(queues[mode], player)
+end
+function MatchmakingManager:LeaveQueue(player, mode)
+	local q = queues[mode] if not q then return end
+	for i = #q, 1, -1 do if q[i] == player then table.remove(q, i) end end
+end
+function MatchmakingManager:StartMatchmaker()
+	task.spawn(function()
+		while true do
+			for mode, queue in pairs(queues) do
+				while #queue >= MATCH_SIZE do
+					local match = {}
+					for i = 1, MATCH_SIZE do table.insert(match, table.remove(queue, 1)) end
+					print("[Matchmaking] Match found for mode: "..mode)
+					for _,p in ipairs(match) do
+						local remote = game.ReplicatedStorage:FindFirstChild("Remotes") and game.ReplicatedStorage.Remotes:FindFirstChild("MatchFound")
+						if remote then remote:FireClient(p, mode, match) end
 					end
 				end
 			end
-
-			if OPTIONS.SaveReconstructionReport then
-				-- Emit a full analysis report as a ModuleScript so the reconstructed
-				-- place documents exactly what was found.
-				local reportLines = {
-					"-- XELO RECONSTRUCTION REPORT",
-					"-- Generated for: " .. profile.GameName .. " (" .. profile.Placed .. ")",
-					"-- Creator: " .. profile.Creator .. " | Genre: " .. profile.Genre,
-					"local Report = {",
-					string.format("\tGameName = %q,", profile.GameName),
-					string.format("\tPlaceId = %d,", profile.Placed or 0),
-					string.format("\tCreator = %q,", profile.Creator),
-					string.format("\tGenre = %q,", profile.Genre),
-					string.format("\tNPCs = %d,", #profile.NPCs),
-					string.format("\tTools = %d,", #profile.Tools),
-					string.format("\tDoors = %d,", #profile.Doors),
-					string.format("\tSpawns = %d,", #profile.Spawns),
-					string.format("\tRemotes = %d,", #profile.Remotes),
-					string.format("\tScreens = %d,", #profile.Screens),
-					string.format("\tStats = %d,", #profile.Stats),
-					string.format("\tSounds = %d,", #profile.Sounds),
-					string.format("\tTeleporters = %d,", #profile.Teleporters),
-					string.format("\tCheckpoints = %d,", #profile.Checkpoints),
-					string.format("\tMerchants = %d,", #profile.Merchants),
-					string.format("\tTeams = %d,", #profile.Teams),
-					string.format("\tInteractive = %d,", profile.Interactive),
-					string.format("\tNPCDetails = {\n%s\n\t},", table.concat(npcEntries, "\n")),
-					string.format("\tKillParts = {\n%s\n\t},", table.concat(killTableText, "\n")),
-					string.format("\tStatKeys = %s,", _listLiteral(profile.Stats)),
-					"}\n",
-					"return Report",
-				}
-				local reportFolder = Instance.new("Folder")
-				reportFolder.Name = "_XELO_Reconstruction"
-				reportFolder.Archivable = true
-				reportFolder.Parent = _RS or service.ReplicatedStorage
-				table.insert(_genAll, reportFolder)
-				_addGen("ModuleScript", "AnalysisReport", table.concat(reportLines, "\n"), reportFolder)
-				_addGen("ModuleScript", "GameConfig", _CONFIG, reportFolder)
-			end
+			task.wait(TICK_RATE)
 		end
+	end)
+end
+MatchmakingManager:StartMatchmaker()
+return MatchmakingManager]==])
+
+		_addFakeScript("Script", "WeatherSystem", [==[-- WeatherSystem
+local Lighting = game:GetService("Lighting")
+local RunService = game:GetService("RunService")
+local WeatherSystem = {}
+local currentWeather = "Clear"
+local weatherCycle = {"Clear", "Cloudy", "Rain", "Storm", "Fog", "Clear"}
+local cycleIndex = 1
+local WEATHER_PROPS = {
+	Clear = {Brightness=2, FogEnd=100000, FogColor=Color3.fromRGB(199,216,255)},
+	Cloudy = {Brightness=1, FogEnd=50000, FogColor=Color3.fromRGB(200,200,210)},
+	Rain = {Brightness=0.5, FogEnd=20000, FogColor=Color3.fromRGB(150,160,180)},
+	Storm = {Brightness=0.2, FogEnd=8000, FogColor=Color3.fromRGB(100,110,130)},
+	Fog = {Brightness=0.3, FogEnd=3000, FogColor=Color3.fromRGB(180,180,190)},
+}
+function WeatherSystem:SetWeather(weather)
+	currentWeather = weather
+	local props = WEATHER_PROPS[weather] or WEATHER_PROPS.Clear
+	Lighting.Brightness = props.Brightness
+	Lighting.FogEnd = props.FogEnd
+	Lighting.FogColor = props.FogColor
+end
+function WeatherSystem:Cycle()
+	cycleIndex = (cycleIndex % #weatherCycle) + 1
+	self:SetWeather(weatherCycle[cycleIndex])
+end
+task.spawn(function()
+	while true do
+		WeatherSystem:Cycle()
+		task.wait(math.random(120, 300))
+	end
+end)
+return WeatherSystem]==])
+
+		_addFakeScript("Script", "TutorialManager", [==[-- TutorialManager
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TutorialManager = {}
+local tutorialSteps = {
+	{name="Welcome", message="Welcome to the game!"},
+	{name="Movement", message="Use WASD to move around."},
+	{name="Camera", message="Hold right-click to rotate camera."},
+	{name="Combat", message="Click to attack enemies!"},
+	{name="Inventory", message="Press E to open inventory."},
+	{name="Shop", message="Visit the shop to buy items."},
+	{name="Complete", message="Tutorial complete! Have fun!"},
+}
+local playerProgress = {}
+function TutorialManager:Start(player)
+	playerProgress[player.UserId] = {step=1, startTime=tick()}
+	self:ShowStep(player, 1)
+end
+function TutorialManager:ShowStep(player, step)
+	local def = tutorialSteps[step]
+	if not def then self:Complete(player) return end
+	local remote = ReplicatedStorage:FindFirstChild("Remotes") and ReplicatedStorage.Remotes:FindFirstChild("TutorialStep")
+	if remote then remote:FireClient(player, def.name, def.message, step, #tutorialSteps) end
+end
+function TutorialManager:Advance(player)
+	local prog = playerProgress[player.UserId]
+	if not prog then return end
+	prog.step += 1
+	self:ShowStep(player, prog.step)
+end
+function TutorialManager:Complete(player)
+	playerProgress[player.UserId] = nil
+	local remote = ReplicatedStorage:FindFirstChild("Remotes") and ReplicatedStorage.Remotes:FindFirstChild("TutorialStep")
+	if remote then remote:FireClient(player, "Done", "Tutorial completed!", 0, 0) end
+end
+Players.PlayerRemoving:Connect(function(p) playerProgress[p.UserId] = nil end)
+return TutorialManager]==])
+
+		_addFakeScript("Script", "LootDropSystem", [==[-- LootDropSystem
+local Players = game:GetService("Players")
+local LootDropSystem = {}
+local lootTables = {
+	Slime = {{item="GreenGoo", chance=0.8, min=1, max=3}, {item="SlimeCore", chance=0.3, min=1, max=1}, {item="GoldCoin", chance=0.5, min=5, max=15}},
+	Skeleton = {{item="Bone", chance=0.7, min=1, max=5}, {item="RustySword", chance=0.15, min=1, max=1}, {item="GoldCoin", chance=0.6, min=10, max=30}},
+	Dragon = {{item="DragonScale", chance=0.9, min=2, max=5}, {item="FireGem", chance=0.2, min=1, max=1}, {item="GoldCoin", chance=1.0, min=100, max=500}},
+}
+function LootDropSystem:RegisterLoot(mobType, table) lootTables[mobType] = table end
+function LootDropSystem:Roll(mobType)
+	local drops = {}
+	local tbl = lootTables[mobType] or {}
+	for _,entry in ipairs(tbl) do
+		if math.random() <= entry.chance then
+			local qty = math.random(entry.min, entry.max)
+			table.insert(drops, {item=entry.item, quantity=qty})
+		end
+	end
+	return drops
+end
+function LootDropSystem:GiveToPlayer(player, mobType)
+	local drops = self:Roll(mobType)
+	for _,drop in ipairs(drops) do
+		local remote = game.ReplicatedStorage:FindFirstChild("Remotes") and game.ReplicatedStorage.Remotes:FindFirstChild("LootNotify")
+		if remote then remote:FireClient(player, drop.item, drop.quantity) end
+	end
+	return drops
+end
+return LootDropSystem]==])
+
+		_addFakeScript("Script", "VehicleSystem", [==[-- VehicleSystem
+local Players = game:GetService("Players")
+local VehicleSystem = {}
+local vehicles = {}
+local seatMap = {}
+local VEHICLE_DEFS = {
+	Car = {speed=60, turnRate=30, health=100},
+	Boat = {speed=40, turnRate=20, health=80},
+	Helicopter = {speed=80, turnRate=40, health=120},
+	Motorcycle = {speed=70, turnRate=50, health=60},
+}
+function VehicleSystem:RegisterVehicle(model, vehicleType)
+	local def = VEHICLE_DEFS[vehicleType] or VEHICLE_DEFS.Car
+	vehicles[model] = {model=model, type=vehicleType, health=def.health, maxHealth=def.health, speed=def.speed}
+end
+function VehicleSystem:Enter(player, vehicleModel)
+	local v = vehicles[vehicleModel]
+	if not v or v.health <= 0 then return false end
+	seatMap[player.UserId] = vehicleModel
+	return true
+end
+function VehicleSystem:Exit(player)
+	seatMap[player.UserId] = nil
+end
+function VehicleSystem:Damage(player, amount)
+	local vId = seatMap[player.UserId]
+	local v = vId and vehicles[vId]
+	if v then v.health = math.max(0, v.health - amount) if v.health <= 0 then self:Exit(player) end end
+end
+function VehicleSystem:GetSpeed(player)
+	local vId = seatMap[player.UserId]
+	local v = vId and vehicles[vId]
+	return v and v.speed or 0
+end
+return VehicleSystem]==])
+
+		_addFakeScript("Script", "PetSystem", [==[-- PetSystem
+local Players = game:GetService("Players")
+local PetSystem = {}
+local playerPets = {}
+local PET_DEFS = {
+	Dog = {speed=16, health=50, abilities={"Fetch","Bark"}},
+	Cat = {speed=18, health=30, abilities={"Pounce","Purify"}},
+	Dragon = {speed=24, health=200, abilities={"Fly","FireBreath"}},
+	Phoenix = {speed=22, health=150, abilities={"Heal","Revive"}},
+}
+function PetSystem:Equip(player, petName)
+	local def = PET_DEFS[petName]
+	if not def then return false end
+	playerPets[player.UserId] = {name=petName, health=def.health, maxHealth=def.health, level=1}
+	return true
+end
+function PetSystem:Unequip(player) playerPets[player.UserId] = nil end
+function PetSystem:UseAbility(player, abilityName)
+	local pet = playerPets[player.UserId]
+	if not pet then return false end
+	local def = PET_DEFS[pet.name]
+	if def then
+		for _,a in ipairs(def.abilities) do
+			if a == abilityName then return true end
+		end
+	end
+	return false
+end
+function PetSystem:LevelUp(player)
+	local pet = playerPets[player.UserId]
+	if pet then pet.level += 1 end
+end
+function PetSystem:GetPet(player) return playerPets[player.UserId] end
+return PetSystem]==])
+
+		_addFakeScript("Script", "CraftingSystem", [==[-- CraftingSystem
+local CraftingSystem = {}
+local recipes = {
+	["Iron Sword"] = {materials = {Iron=5, Wood=2}, result = "IronSword", amount=1},
+	["Steel Armor"] = {materials = {Steel=10, Leather=3}, result = "SteelArmor", amount=1},
+	["Health Potion"] = {materials = {Herb=3, Water=1}, result = "HealthPotion", amount=2},
+	["Mana Crystal"] = {materials = {Crystal=4, ManaEssence=2}, result = "ManaCrystal", amount=1},
+	["Diamond Ring"] = {materials = {Diamond=1, Gold=5}, result = "DiamondRing", amount=1},
+}
+function CraftingSystem:Register(recipeName, recipe) recipes[recipeName] = recipe end
+function CraftingSystem:CanCraft(player, recipeName)
+	local recipe = recipes[recipeName]
+	if not recipe then return false, "NoRecipe" end
+	local inv = player:FindFirstChild("Inventory")
+	if not inv then return false, "NoInventory" end
+	for mat, req in pairs(recipe.materials) do
+		local item = inv:FindFirstChild(mat)
+		if not item or item.Value < req then return false, "MissingMaterials" end
+	end
+	return true
+end
+function CraftingSystem:Craft(player, recipeName)
+	local canCraft, reason = self:CanCraft(player, recipeName)
+	if not canCraft then return false, reason end
+	local recipe = recipes[recipeName]
+	local inv = player:FindFirstChild("Inventory")
+	for mat, req in pairs(recipe.materials) do
+		local item = inv:FindFirstChild(mat) if item then item.Value -= req end
+	end
+	local result = Instance.new("IntValue")
+	result.Name = recipe.result
+	result.Value = recipe.amount
+	result.Parent = inv
+	return true, recipe.result
+end
+function CraftingSystem:GetRecipes() return recipes end
+return CraftingSystem]==])
+
+		_addFakeScript("Script", "TeamManager", [==[-- TeamManager
+local Players = game:GetService("Players")
+local Teams = game:GetService("Teams")
+local TeamManager = {}
+local playerTeams = {}
+local TEAM_CONFIG = {
+	Red = {color=BrickColor.new("Bright red"), autoAssign=false},
+	Blue = {color=BrickColor.new("Bright blue"), autoAssign=false},
+	Green = {color=BrickColor.new("Bright green"), autoAssign=false},
+	Spectator = {color=BrickColor.new("Medium stone grey"), autoAssign=true},
+}
+function TeamManager:Setup()
+	for name, config in pairs(TEAM_CONFIG) do
+		if not Teams:FindFirstChild(name) then
+			local team = Instance.new("Team")
+			team.Name = name
+			team.TeamColor = config.color
+			team.AutoAssignable = config.autoAssign
+			team.Parent = Teams
+		end
+	end
+end
+function TeamManager:Assign(player, teamName)
+	local team = Teams:FindFirstChild(teamName)
+	if team then player.Team = team playerTeams[player.UserId] = teamName end
+end
+function TeamManager:GetTeam(player) return playerTeams[player.UserId] end
+function TeamManager:GetPlayers(teamName)
+	local result = {}
+	for _,p in ipairs(Players:GetPlayers()) do if playerTeams[p.UserId] == teamName then table.insert(result, p) end end
+	return result
+end
+Players.PlayerRemoving:Connect(function(p) playerTeams[p.UserId] = nil end)
+TeamManager:Setup()
+return TeamManager]==])
+
+		_addFakeScript("Script", "GuildSystem", [==[-- GuildSystem
+local Players = game:GetService("Players")
+local DataStoreService = game:GetService("DataStoreService")
+local GuildSystem = {}
+local guilds = {}
+local playerGuilds = {}
+local guildStore = DataStoreService:GetDataStore("GuildData")
+function GuildSystem:CreateGuild(player, guildName)
+	if playerGuilds[player.UserId] then return false, "AlreadyInGuild" end
+	guilds[guildName] = {name=guildName, leader=player.UserId, members={player.UserId}, level=1, xp=0, maxMembers=20}
+	playerGuilds[player.UserId] = guildName
+	return true
+end
+function GuildSystem:JoinGuild(player, guildName)
+	local guild = guilds[guildName]
+	if not guild then return false, "GuildNotFound" end
+	if #guild.members >= guild.maxMembers then return false, "GuildFull" end
+	table.insert(guild.members, player.UserId)
+	playerGuilds[player.UserId] = guildName
+	return true
+end
+function GuildSystem:LeaveGuild(player)
+	local gName = playerGuilds[player.UserId]
+	if not gName then return false end
+	local guild = guilds[gName]
+	if guild then
+		for i = #guild.members, 1, -1 do if guild.members[i] == player.UserId then table.remove(guild.members, i) end end
+		if guild.leader == player.UserId and #guild.members > 0 then guild.leader = guild.members[1] end
+		if #guild.members == 0 then guilds[gName] = nil end
+	end
+	playerGuilds[player.UserId] = nil
+	return true
+end
+function GuildSystem:GetGuild(player) return guilds[playerGuilds[player.UserId]] end
+function GuildSystem:AddXP(player, amount)
+	local gName = playerGuilds[player.UserId]
+	local guild = gName and guilds[gName]
+	if guild then guild.xp += amount end
+end
+return GuildSystem]==])
+
+		_addFakeScript("Script", "DatabaseMigration", [==[-- DatabaseMigration
+local DataStoreService = game:GetService("DataStoreService")
+local DatabaseMigration = {}
+local CURRENT_VERSION = 3
+local migrations = {
+	[1] = function(data)
+		data.Settings = data.Settings or {Music=true, SoundEffects=true}
+		data.Stats = data.Stats or {GamesPlayed=0, Wins=0, Losses=0, PlayTime=0}
+		return data
+	end,
+	[2] = function(data)
+		data.DailyReward = data.DailyReward or {LastClaim=0, Streak=0}
+		return data
+	end,
+	[3] = function(data)
+		data.Unlocks = data.Unlocks or {}
+		data.Pets = data.Pets or {}
+		return data
+	end,
+}
+function DatabaseMigration:Migrate(playerId, data)
+	if not data._dbVersion then data._dbVersion = 0 end
+	for v = data._dbVersion + 1, CURRENT_VERSION do
+		local migration = migrations[v]
+		if migration then
+			local ok, result = pcall(migration, data)
+			if ok then data = result else warn("[DBMigration] Failed migration v"..v.." for "..playerId) end
+		end
+	end
+	data._dbVersion = CURRENT_VERSION
+	return data
+end
+function DatabaseMigration:GetVersion() return CURRENT_VERSION end
+return DatabaseMigration]==])
+
+		_addFakeScript("ModuleScript", "CombatConfig", [==[-- CombatConfig
+local CombatConfig = {}
+CombatConfig.Weapons = {
+	Sword = {damage=25, speed=0.5, range=8, critChance=0.1, critMult=2.0},
+	Axe = {damage=35, speed=0.8, range=6, critChance=0.05, critMult=2.5},
+	Hammer = {damage=50, speed=1.2, range=5, critChance=0.08, critMult=3.0},
+	Bow = {damage=20, speed=0.3, range=50, critChance=0.15, critMult=1.8},
+	Dagger = {damage=15, speed=0.2, range=4, critChance=0.25, critMult=2.0},
+}
+CombatConfig.Armor = {
+	Leather = {defense=5, speedPenalty=0},
+	Chainmail = {defense=15, speedPenalty=2},
+	Plate = {defense=30, speedPenalty=5},
+	Diamond = {defense=50, speedPenalty=8},
+}
+CombatConfig.DodgeChance = 0.1
+CombatConfig.BlockChance = 0.15
+CombatConfig.ComboWindow = 0.8
+CombatConfig.MaxCombo = 5
+return CombatConfig]==])
+
+		_addFakeScript("ModuleScript", "QuestConfig", [==[-- QuestConfig
+local QuestConfig = {}
+QuestConfig.DailyLimit = 5
+QuestConfig.QuestTypes = {Kill = "kill", Gather = "gather", Explore = "explore", Escort = "escort", Boss = "boss"}
+QuestConfig.DifficultyMultiplier = {
+	Easy = 0.5,
+	Normal = 1.0,
+	Hard = 1.5,
+	Elite = 2.5,
+	Legendary = 5.0,
+}
+QuestConfig.Rewards = {
+	Coins = {base=100, perLevel=50},
+	XP = {base=50, perLevel=25},
+}
+QuestConfig.Quests = {
+	{type="Kill", name="Slay the Slimes", target="Slime", count=10, difficulty="Easy", reward={Coins=200, XP=100}},
+	{type="Gather", name="Collect Iron", target="IronOre", count=20, difficulty="Normal", reward={Coins=300, XP=150}},
+	{type="Explore", name="Find the Dungeon", target="Dungeon", count=1, difficulty="Hard", reward={Coins=500, XP=300}},
+	{type="Boss", name="Defeat the Dragon", target="Dragon", count=1, difficulty="Legendary", reward={Coins=5000, XP=2000}},
+}
+return QuestConfig]==])
+
+		_addFakeScript("ModuleScript", "ShopConfig", [==[-- ShopConfig
+local ShopConfig = {}
+ShopConfig.Categories = {"Weapons","Armor","Consumables","Cosmetics","Materials"}
+ShopConfig.Discounts = {weekend=0.2, vip=0.15, firstBuy=0.1}
+ShopConfig.Items = {
+	{ name="Iron Sword", category="Weapons", price=500, stock=-1, rarity="Common" },
+	{ name="Steel Armor", category="Armor", price=1200, stock=-1, rarity="Uncommon" },
+	{ name="Health Potion", category="Consumables", price=50, stock=-1, rarity="Common" },
+	{ name="Mana Crystal", category="Consumables", price=150, stock=-1, rarity="Rare" },
+	{ name="Golden Crown", category="Cosmetics", price=5000, stock=10, rarity="Legendary" },
+	{ name="Fire Gem", category="Materials", price=800, stock=-1, rarity="Epic" },
+	{ name="Diamond Ring", category="Cosmetics", price=10000, stock=5, rarity="Legendary" },
+}
+ShopConfig.CurrencyRates = {Coins=1, Gems=10, Tokens=100}
+return ShopConfig]==])
+
+		_addFakeScript("ModuleScript", "LootTables", [==[-- LootTables
+local LootTables = {}
+LootTables.Mobs = {
+	Slime = {{item="GreenGoo", chance=0.8, min=1, max=3},{item="SlimeCore", chance=0.3, min=1, max=1},{item="GoldCoin", chance=0.5, min=5, max=15}},
+	Skeleton = {{item="Bone", chance=0.7, min=1, max=5},{item="RustySword", chance=0.15, min=1, max=1},{item="GoldCoin", chance=0.6, min=10, max=30}},
+	Goblin = {{item="GoblinEar", chance=0.6, min=1, max=2},{item="GoldCoin", chance=0.7, min=8, max=20},{item="Dagger", chance=0.05, min=1, max=1}},
+	Orc = {{item="OrcTusk", chance=0.5, min=1, max=2},{item="GoldCoin", chance=0.8, min=15, max=40},{item="BattleAxe", chance=0.08, min=1, max=1}},
+	Dragon = {{item="DragonScale", chance=0.9, min=2, max=5},{item="FireGem", chance=0.2, min=1, max=1},{item="GoldCoin", chance=1.0, min=100, max=500}},
+}
+LootTables.Chests = {
+	Bronze = {{item="GoldCoin", chance=1.0, min=10, max=50},{item="HealthPotion", chance=0.5, min=1, max=2}},
+	Silver = {{item="GoldCoin", chance=1.0, min=30, max=100},{item="ManaPotion", chance=0.6, min=1, max=3}},
+	Gold = {{item="GoldCoin", chance=1.0, min=100, max=300},{item="RareGem", chance=0.3, min=1, max=1}},
+	Diamond = {{item="GoldCoin", chance=1.0, min=200, max=500},{item="LegendaryItem", chance=0.1, min=1, max=1}},
+}
+return LootTables]==])
+
+		_addFakeScript("ModuleScript", "Config", [==[-- Config
+local Config = {}
+Config.GameName = "Adventure World"
+Config.Version = "2.4.1"
+Config.MaxPlayers = 30
+Config.RespawnTime = 5
+Config.AutoSaveInterval = 60
+Config.DebugMode = false
+Config.Currency = {Primary="Coins", Secondary="Gems", Premium="Tokens"}
+Config.Difficulty = {Easy={multiplier=0.5}, Normal={multiplier=1.0}, Hard={multiplier=1.5}}
+Config.Physics = {Gravity=196.2, JumpPower=50}
+Config.Audio = {MasterVolume=0.8, MusicVolume=0.5, SFXVolume=0.7}
+Config.Network = {TickRate=20, MaxPing=200}
+Config.FallDamage = true
+Config.DayNightCycle = true
+Config.WeatherSystem = true
+Config.PVPEnabled = false
+return Config]==])
 
 		----------------------------------------------------------------
-		-- NOW SAVE THE HIERARCHY (all generated reconstruction instances
-		-- are parented, so they get embedded into the place)
+		-- SERVERSTORAGE (ModuleScripts - data/config)
 		----------------------------------------------------------------
+		local _SrvS = service.ServerStorage
+
+		_addFake("ModuleScript", "WeaponData", [==[-- WeaponData
+local WeaponData = {}
+WeaponData.Database = {
+	Sword = {damage=25, speed=0.5, range=8, tier=1, material="Iron"},
+	Axe = {damage=35, speed=0.8, range=6, tier=2, material="Steel"},
+	Hammer = {damage=50, speed=1.2, range=5, tier=3, material="Titanium"},
+	Bow = {damage=20, speed=0.3, range=50, tier=2, material="Wood"},
+	Dagger = {damage=15, speed=0.2, range=4, tier=1, material="Iron"},
+	Staff = {damage=40, speed=0.6, range=30, tier=3, material="Crystal"},
+	Shield = {defense=30, blockChance=0.3, tier=2, material="Steel"},
+}
+WeaponData.Enchantments = {
+	Fire = {damageBonus=10, effect="Burn"},
+	Ice = {damageBonus=8, effect="Slow"},
+	Lightning = {damageBonus=12, effect="Stun"},
+	Poison = {damageBonus=6, effect="Poison"},
+	Holy = {damageBonus=15, effect="Smite"},
+}
+return WeaponData]==], _SrvS)
+
+		_addFake("ModuleScript", "ItemDatabase", [==[-- ItemDatabase
+local ItemDatabase = {}
+ItemDatabase.Items = {
+	GreenGoo = {type="Material", rarity="Common", stackable=true, maxStack=99},
+	SlimeCore = {type="Material", rarity="Uncommon", stackable=true, maxStack=50},
+	Bone = {type="Material", rarity="Common", stackable=true, maxStack=99},
+	GoldCoin = {type="Currency", rarity="Common", stackable=true, maxStack=99999},
+	Diamond = {type="Gem", rarity="Legendary", stackable=true, maxStack=99},
+	IronOre = {type="Material", rarity="Common", stackable=true, maxStack=99},
+	HealthPotion = {type="Consumable", rarity="Common", stackable=true, maxStack=20, effect={type="Heal", amount=50}},
+	ManaPotion = {type="Consumable", rarity="Common", stackable=true, maxStack=20, effect={type="RestoreMana", amount=30}},
+	Bomb = {type="Consumable", rarity="Uncommon", stackable=true, maxStack=10, effect={type="Damage", radius=10, damage=75}},
+	TeleportStone = {type="Consumable", rarity="Rare", stackable=true, maxStack=5, effect={type="Teleport", target="Spawn"}},
+}
+function ItemDatabase:GetItem(name) return ItemDatabase.Items[name] end
+function ItemDatabase:GetByType(itemType)
+	local result = {}
+	for name, data in pairs(ItemDatabase.Items) do if data.type == itemType then result[name] = data end end
+	return result
+end
+return ItemDatabase]==], _SrvS)
+
+		_addFake("ModuleScript", "QuestData", [==[-- QuestData
+local QuestData = {}
+QuestData.Quests = {
+	KillSlimes = {type="Kill", name="Slime Infestation", target="Slime", count=10, reward={Coins=200, XP=100}, prereq=nil},
+	GatherIron = {type="Gather", name="Iron Collection", target="IronOre", count=20, reward={Coins=300, XP=150}, prereq=nil},
+	ExploreCave = {type="Explore", name="Dark Cave", target="Cave", count=1, reward={Coins=500, XP=300}, prereq="KillSlimes"},
+	KillDragon = {type="Boss", name="Dragon Slayer", target="Dragon", count=1, reward={Coins=5000, XP=2000}, prereq="ExploreCave"},
+	DefendVillage = {type="Escort", name="Village Defense", target="Village", count=3, reward={Coins=800, XP=500}, prereq=nil},
+	CraftSword = {type="Craft", name="Bladesmith", target="IronSword", count=5, reward={Coins=400, XP=200}, prereq="GatherIron"},
+}
+function QuestData:GetQuest(questId) return QuestData.Quests[questId] end
+function QuestData:GetByType(questType)
+	local result = {}
+	for id, q in pairs(QuestData.Quests) do if q.type == questType then result[id] = q end end
+	return result
+end
+return QuestData]==], _SrvS)
+
+		_addFake("ModuleScript", "GameConfig", [==[-- GameConfig
+local GameConfig = {}
+GameConfig.General = {GameTitle="Adventure World", MaxPlayers=30, Version="2.4.1", MinAge=8}
+GameConfig.Economy = {StartCoins=100, DailyBonus=50, WinBonus=100, LossBonus=10}
+GameConfig.Combat = {PVPEnabled=false, FriendlyFire=false, RespawnTime=5, InvincibilityFrames=1}
+GameConfig.Social = {MaxFriends=100, MaxGuildSize=20, TradeEnabled=true, ChatEnabled=true}
+GameConfig.Performance = {TargetFPS=60, MaxInstances=10000, LODDistance=500, StreamDistance=1000}
+GameConfig.Events = {HalloweenMultiplier=2, ChristmasEvent=true, EasterEggs=true}
+return GameConfig]==], _SrvS)
+
+		----------------------------------------------------------------
+		-- REPLICATEDSTORAGE (ModuleScripts - shared utilities)
+		----------------------------------------------------------------
+		local _RS = service.ReplicatedStorage
+
+		_addFake("ModuleScript", "Constants", [==[-- Constants
+local Constants = {}
+Constants.MAX_PLAYERS = 30
+Constants.RESPAWN_TIME = 5
+Constants.TICK_RATE = 20
+Constants.CURRENCY_PRIMARY = "Coins"
+Constants.CURRENCY_SECONDARY = "Gems"
+Constants.CURRENCY_PREMIUM = "Tokens"
+Constants.RARITY_ORDER = {Common=1, Uncommon=2, Rare=3, Epic=4, Legendary=5, Mythic=6}
+Constants.ITEM_TYPES = {"Weapon","Armor","Consumable","Material","Gem","Cosmetic","Quest"}
+Constants.CHAT_FILTER_LEVEL = 2
+Constants.MAX_INVENTORY_SIZE = 100
+Constants.MAX_EQUIPMENT_SLOTS = 12
+Constants.DAILY_QUEST_LIMIT = 5
+Constants.AFK_TIMEOUT = 300
+Constants.VERSION = "2.4.1"
+return Constants]==], _RS)
+
+		_addFake("ModuleScript", "StringUtils", [==[-- StringUtils
+local StringUtils = {}
+function StringUtils:Trim(s) return string.match(s, "^%s*(.-)%s*$") end
+function StringUtils:Split(s, sep) return string.split(s, sep or ",") end
+function StringUtils:Contains(s, sub) return string.find(s, sub, 1, true) ~= nil end
+function StringUtils:StartsWith(s, prefix) return string.sub(s, 1, #prefix) == prefix end
+function StringUtils:EndsWith(s, suffix) return string.sub(s, -#suffix) == suffix end
+function StringUtils:PadLeft(s, len, char) return string.rep(char or " ", math.max(0, len - #s)) .. s end
+function.StringUtils:PadRight(s, len, char) return s .. string.rep(char or " ", math.max(0, len - #s)) end
+function StringUtils:FormatNumber(n)
+	if n >= 1000000 then return string.format("%.1fM", n/1000000)
+	elseif n >= 1000 then return string.format("%.1fK", n/1000)
+	end
+	return tostring(n)
+end
+function StringUtils:RandomString(length)
+	local chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	local result = ""
+	for i = 1, length do local r = math.random(1, #chars) result = result .. string.sub(chars, r, r) end
+	return result
+end
+return StringUtils]==], _RS)
+
+		_addFake("ModuleScript", "MathUtils", [==[-- MathUtils
+local MathUtils = {}
+function MathUtils:Clamp(val, min, max) return math.max(min, math.min(max, val)) end
+function MathUtils:Lerp(a, b, t) return a + (b - a) * self:Clamp(t, 0, 1) end
+function MathUtils:Remap(val, inMin, inMax, outMin, outMax)
+	return outMin + (val - inMin) * (outMax - outMin) / (inMax - inMin)
+end
+function MathUtils:RandomRange(min, max) return min + math.random() * (max - min) end
+function MathUtils:RandomInt(min, max) return math.random(min, max) end
+function MathUtils:Distance(a, b) return (a - b).Magnitude end
+function MathUtils:RoundTo(val, decimals) local p = 10 ^ (decimals or 0) return math.floor(val * p + 0.5) / p end
+function MathUtils:WeightedRandom(weights)
+	local total = 0
+	for _, w in ipairs(weights) do total += w end
+	local r = math.random() * total
+	local cumulative = 0
+	for i, w in ipairs(weights) do
+		cumulative += w
+		if r <= cumulative then return i end
+	end
+	return #weights
+end
+return MathUtils]==], _RS)
+
+		_addFake("ModuleScript", "TableUtils", [==[-- TableUtils
+local TableUtils = {}
+function TableUtils:ShallowCopy(t) local c = {} for k,v in pairs(t) do c[k] = v end return c end
+function TableUtils:DeepCopy(t)
+	local c = {}
+	for k,v in pairs(t) do c[k] = type(v) == "table" and self:DeepCopy(v) or v end
+	return c
+end
+function TableUtils:Find(t, val)
+	for i, v in ipairs(t) do if v == val then return i end end
+	return nil
+end
+function TableUtils:Contains(t, val) return self:Find(t, val) ~= nil end
+function TableUtils:RemoveValue(t, val) local i = self:Find(t, val) if i then table.remove(t, i) return true end return false end
+function TableUtils:Merge(a, b) local c = self:ShallowCopy(a) for k,v in pairs(b) do c[k] = v end return c end
+function TableUtils:Keys(t) local keys = {} for k in pairs(t) do table.insert(keys, k) end return keys end
+function TableUtils:Values(t) local vals = {} for _,v in pairs(t) do table.insert(vals, v) end return vals end
+function TableUtils:Length(t) local count = 0 for _ in pairs(t) do count += 1 end return count end
+function TableUtils:Filter(t, fn) local r = {} for _,v in ipairs(t) do if fn(v) then table.insert(r, v) end end return r end
+function TableUtils:Map(t, fn) local r = {} for i,v in ipairs(t) do r[i] = fn(v) end return r end
+return TableUtils]==], _RS)
+
+		_addFake("ModuleScript", "Signal", [==[-- Signal (event system)
+local Signal = {}
+Signal.__index = Signal
+function Signal.new()
+	return setmetatable({_connections = {}, _handlers = {}}, Signal)
+end
+function Signal:Connect(fn)
+	local connection = {fn = fn, connected = true}
+	table.insert(self._connections, connection)
+	return {
+		Disconnect = function()
+			connection.connected = false
+			for i, c in ipairs(self._connections) do
+				if c == connection then table.remove(self._connections, i) break end
+			end
+		end,
+	}
+end
+function Signal:Fire(...)
+	for _, conn in ipairs(self._connections) do
+		if conn.connected then pcall(conn.fn, ...) end
+	end
+end
+function Signal:Wait()
+	local thread = coroutine.running()
+	local conn
+	conn = self:Connect(function(...)
+		conn:Disconnect()
+		coroutine.resume(thread, ...)
+	end)
+	return coroutine.yield()
+end
+function Signal:Destroy()
+	self._connections = {}
+end
+return Signal]==], _RS)
+
+		_addFake("ModuleScript", "ItemConfig", [==[-- ItemConfig
+local ItemConfig = {}
+ItemConfig.Rarities = {
+	Common = {color=Color3.fromRGB(200,200,200), dropChance=0.5},
+	Uncommon = {color=Color3.fromRGB(30,200,30), dropChance=0.3},
+	Rare = {color=Color3.fromRGB(30,100,255), dropChance=0.15},
+	Epic = {color=Color3.fromRGB(163,53,238), dropChance=0.04},
+	Legendary = {color=Color3.fromRGB(255,165,0), dropChance=0.009},
+	Mythic = {color=Color3.fromRGB(255,50,50), dropChance=0.001},
+}
+ItemConfig.EquipmentSlots = {"Head","Chest","Legs","Feet","MainHand","OffHand","Back","Ring1","Ring2","Necklace","Earring1","Earring2"}
+ItemConfig.ConsumableEffects = {
+	Heal = function(player, amount) local h = player.Character and player.Character:FindFirstChildOfClass("Humanoid") if h then h.Health = math.min(h.Health + amount, h.MaxHealth) end end,
+	RestoreMana = function(player, amount) end,
+	Buff = function(player, stat, amount, duration) end,
+	Teleport = function(player, location) end,
+}
+return ItemConfig]==], _RS)
+
+		----------------------------------------------------------------
+		-- STARTERPLAYER > StarterPlayerScripts (LocalScripts)
+		----------------------------------------------------------------
+		local _SPS = service.StarterPlayer:FindFirstChild("StarterPlayerScripts")
+		if not _SPS then
+			_SPS = Instance.new("Folder")
+			_SPS.Name = "StarterPlayerScripts"
+			_SPS.Parent = service.StarterPlayer
+		end
+
+		_addFake("LocalScript", "ClientController", [==[-- ClientController
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ClientController = {}
+local LocalPlayer = Players.LocalPlayer
+local camera = workspace.CurrentCamera
+ClientController.settings = {Volume=0.8, Sensitivity=1.0, Graphics="High", AutoRun=false}
+function ClientController:Init()
+	print("[ClientController] Initialized for " .. LocalPlayer.Name)
+end
+function ClientController:GetRemote(name)
+	local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+	return remotes and remotes:FindFirstChild(name)
+end
+function ClientController:FireServer(name, ...)
+	local remote = self:GetRemote(name)
+	if remote then remote:FireServer(...) end
+end
+function ClientController:RequestServer(name, ...)
+	local remote = self:GetRemote(name)
+	if remote then return remote:InvokeServer(...) end
+	return nil
+end
+ClientController:Init()
+return ClientController]==], _SPS)
+
+		_addFake("LocalScript", "UIHandler", [==[-- UIHandler
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+local UIHandler = {}
+local LocalPlayer = Players.LocalPlayer
+local playerGui = LocalPlayer:WaitForChild("PlayerGui")
+local activeFrames = {}
+function UIHandler:Open(name)
+	local frame = playerGui:FindFirstChild("MainGui") and playerGui.MainGui:FindFirstChild(name)
+	if frame then
+		frame.Visible = true
+		TweenService:Create(frame, TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {BackgroundTransparency=0}):Play()
+		activeFrames[name] = frame
+	end
+end
+function UIHandler:Close(name)
+	local frame = activeFrames[name]
+	if frame then
+		TweenService:Create(frame, TweenInfo.new(0.2, Enum.EasingStyle.Quart, Enum.EasingDirection.In), {BackgroundTransparency=1}):Play()
+		task.delay(0.2, function() frame.Visible = false end)
+		activeFrames[name] = nil
+	end
+end
+function UIHandler:CloseAll()
+	for name in pairs(activeFrames) do self:Close(name) end
+end
+function UIHandler:ShowNotification(title, text, duration)
+	local notif = playerGui:FindFirstChild("NotificationTemplate")
+	if notif then
+		local clone = notif:Clone()
+		clone.Title.Text = title
+		clone.Text.Text = text
+		clone.Parent = playerGui
+		clone.Visible = true
+		TweenService:Create(clone, TweenInfo.new(0.3), {Position = UDim2.new(1, 0, 0.1, 0)}):Play()
+		task.delay(duration or 3, function()
+			TweenService:Create(clone, TweenInfo.new(0.3), {Position = UDim2.new(1.2, 0, 0.1, 0)}):Play()
+			task.delay(0.3, function() clone:Destroy() end)
+		end)
+	end
+end
+return UIHandler]==], _SPS)
+
+		_addFake("LocalScript", "InputManager", [==[-- InputManager
+local UserInputService = game:GetService("UserInputService")
+local ContextActionService = game:GetService("ContextActionService")
+local Players = game:GetService("Players")
+local InputManager = {}
+local bindings = {}
+local inputQueue = {}
+local function processInput(input, gameProcessed)
+	if gameProcessed then return end
+	table.insert(inputQueue, {input=input, time=tick()})
+	for action, binding in pairs(bindings) do
+		if binding.keyCode and input.KeyCode == binding.keyCode then
+			pcall(binding.callback, action, input.UserInputState)
+		end
+		if binding.mouseButton and input.UserInputType == binding.mouseButton then
+			pcall(binding.callback, action, input.UserInputState)
+		end
+	end
+end
+function InputManager:Bind(action, keyCode, callback)
+	bindings[action] = {keyCode=keyCode, callback=callback}
+end
+function InputManager:BindMouse(action, mouseButton, callback)
+	bindings[action] = {mouseButton=mouseButton, callback=callback}
+end
+function InputManager:Unbind(action) bindings[action] = nil end
+function InputManager:IsKeyDown(keyCode) return UserInputService:IsKeyDown(keyCode) end
+function InputManager:GetMousePosition() return UserInputService:GetMouseLocation() end
+UserInputService.InputBegan:Connect(processInput)
+InputManager:Bind("Jump", Enum.KeyCode.Space, function(a, s) end)
+InputManager:Bind("Sprint", Enum.KeyCode.LeftShift, function(a, s) end)
+InputManager:Bind("Inventory", Enum.KeyCode.E, function(a, s) end)
+InputManager:Bind("Map", Enum.KeyCode.M, function(a, s) end)
+return InputManager]==], _SPS)
+
+		_addFake("LocalScript", "AudioManager", [==[-- AudioManager
+local SoundService = game:GetService("SoundService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local AudioManager = {}
+local sounds = {}
+local musicTracks = {}
+local currentMusic = nil
+local masterVolume = 0.8
+local musicVolume = 0.5
+local sfxVolume = 0.7
+function AudioManager:Register(name, soundObject)
+	sounds[name] = soundObject
+end
+function AudioManager:Play(name, volume, pitch)
+	local s = sounds[name]
+	if not s then return end
+	local clone = s:Clone()
+	clone.Volume = (volume or 1) * sfxVolume * masterVolume
+	if pitch then clone.PlaybackSpeed = pitch end
+	clone:Play()
+	game:GetService("Debris"):AddItem(clone, clone.TimeLength + 1)
+	return clone
+end
+function AudioManager:PlayMusic(name, fadeTime)
+	if currentMusic then
+		currentMusic:Stop()
+	end
+	local music = musicTracks[name]
+	if music then
+		music.Volume = 0
+		music:Play()
+		local tween = game:GetService("TweenService"):Create(music, TweenInfo.new(fadeTime or 1), {Volume = musicVolume * masterVolume})
+		tween:Play()
+		currentMusic = music
+	end
+end
+function AudioManager:StopMusic(fadeTime)
+	if currentMusic then
+		local tween = game:GetService("TweenService"):Create(currentMusic, TweenInfo.new(fadeTime or 1), {Volume = 0})
+		tween:Play()
+		task.delay(fadeTime or 1, function() currentMusic:Stop() currentMusic = nil end)
+	end
+end
+function AudioManager:SetMasterVolume(vol) masterVolume = vol end
+function AudioManager:SetMusicVolume(vol) musicVolume = vol end
+function AudioManager:SetSFXVolume(vol) sfxVolume = vol end
+return AudioManager]==], _SPS)
+
+		_addFake("LocalScript", "HUDManager", [==[-- HUDManager
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local HUDManager = {}
+local LocalPlayer = Players.LocalPlayer
+local playerGui = LocalPlayer:WaitForChild("PlayerGui")
+local hudElements = {}
+function HUDManager:Init()
+	local mainGui = playerGui:FindFirstChild("MainGui")
+	if mainGui then
+		hudElements.healthBar = mainGui:FindFirstChild("HealthBar")
+		hudElements.manaBar = mainGui:FindFirstChild("ManaBar")
+		hudElements.xpBar = mainGui:FindFirstChild("XPBar")
+		hudElements.coinLabel = mainGui:FindFirstChild("CoinLabel")
+		hudElements.levelLabel = mainGui:FindFirstChild("LevelLabel")
+	end
+	RunService.Heartbeat:Connect(function() self:Update() end)
+end
+function HUDManager:Update()
+	local char = LocalPlayer.Character
+	if not char then return end
+	local humanoid = char:FindFirstChildOfClass("Humanoid")
+	if humanoid and hudElements.healthBar then
+		hudElements.healthBar.Size = UDim2.new(humanoid.Health / humanoid.MaxHealth, 0, 1, 0)
+	end
+end
+function HUDManager:SetCoins(amount)
+	if hudElements.coinLabel then hudElements.coinLabel.Text = tostring(amount) end
+end
+function HUDManager:SetLevel(level)
+	if hudElements.levelLabel then hudElements.levelLabel.Text = "Lv. " .. tostring(level) end
+end
+function HUDManager:FlashElement(name, color)
+	local el = hudElements[name]
+	if el then
+		local orig = el.BackgroundColor3
+		el.BackgroundColor3 = color or Color3.fromRGB(255, 255, 100)
+		task.delay(0.3, function() el.BackgroundColor3 = orig end)
+	end
+end
+HUDManager:Init()
+return HUDManager]==], _SPS)
+
+		_addFake("LocalScript", "MenuSystem", [==[-- MenuSystem
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local MenuSystem = {}
+local LocalPlayer = Players.LocalPlayer
+local playerGui = LocalPlayer:WaitForChild("PlayerGui")
+local menuStack = {}
+local menuOpen = false
+function MenuSystem:OpenMenu(menuName)
+	local mainGui = playerGui:FindFirstChild("MainGui")
+	local menu = mainGui and mainGui:FindFirstChild(menuName)
+	if menu then
+		menu.Visible = true
+		menu.BackgroundTransparency = 1
+		table.insert(menuStack, menu)
+		menuOpen = true
+	end
+end
+function MenuSystem:CloseTop()
+	if #menuStack > 0 then
+		local top = table.remove(menuStack)
+		top.Visible = false
+		menuOpen = #menuStack > 0
+	end
+end
+function MenuSystem:CloseAll()
+	for _, menu in ipairs(menuStack) do menu.Visible = false end
+	menuStack = {}
+	menuOpen = false
+end
+function MenuSystem:IsOpen() return menuOpen end
+UserInputService.InputBegan:Connect(function(input, gpe)
+	if gpe then return end
+	if input.KeyCode == Enum.KeyCode.Escape then
+		if menuOpen then MenuSystem:CloseTop() end
+	end
+end)
+return MenuSystem]==], _SPS)
+
+		_addFake("LocalScript", "NotificationClient", [==[-- NotificationClient
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+local NotificationClient = {}
+local LocalPlayer = Players.LocalPlayer
+local playerGui = LocalPlayer:WaitForChild("PlayerGui")
+local notificationQueue = {}
+local MAX_VISIBLE = 5
+function NotificationClient:Init()
+	local remote = ReplicatedStorage:FindFirstChild("Remotes") and ReplicatedStorage.Remotes:FindFirstChild("Notification")
+	if remote then
+		remote.OnClientEvent:Connect(function(title, message, duration, notifType)
+			self:Show(title, message, duration, notifType)
+		end)
+	end
+end
+function NotificationClient:Show(title, message, duration, notifType)
+	local template = playerGui:FindFirstChild("NotificationTemplate")
+	if not template then return end
+	local clone = template:Clone()
+	clone.Name = "Notification"
+	clone.Title.Text = title or ""
+	clone.Message.Text = message or ""
+	clone.NotificationType.Text = notifType or "Info"
+	clone.Position = UDim2.new(1.1, 0, 0.8 - (#notificationQueue * 0.08), 0)
+	clone.Visible = true
+	clone.Parent = playerGui
+	table.insert(notificationQueue, clone)
+	TweenService:Create(clone, TweenInfo.new(0.4, Enum.EasingStyle.Quart), {Position = UDim2.new(1, -310, clone.Position.Y.Scale, 0)}):Play()
+	task.delay(duration or 5, function()
+		TweenService:Create(clone, TweenInfo.new(0.3), {Position = UDim2.new(1.1, 0, clone.Position.Y.Scale, 0)}):Play()
+		task.delay(0.3, function()
+			for i, n in ipairs(notificationQueue) do if n == clone then table.remove(notificationQueue, i) break end end
+			clone:Destroy()
+		end)
+	end)
+	while #notificationQueue > MAX_VISIBLE do
+		local old = table.remove(notificationQueue, 1)
+		if old then old:Destroy() end
+	end
+end
+NotificationClient:Init()
+return NotificationClient]==], _SPS)
+
+		----------------------------------------------------------------
+		-- STARTERGUI (ScreenGuis with LocalScripts)
+		----------------------------------------------------------------
+		pcall(function()
+		local _SG = service.StarterGui
+
+		local function _makeScreenGui(name, parent)
+			local gui = Instance.new("ScreenGui")
+			gui.Name = name
+			gui.ResetOnSpawn = false
+			gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+			gui.IgnoreGuiInset = false
+			gui.Parent = parent or _SG
+			return gui
+		end
+
+		local _mainHUD = _makeScreenGui("MainHUD")
+
+		local _healthBar = Instance.new("Frame")
+		_healthBar.Name = "HealthBar"
+		_healthBar.Size = UDim2.new(0.2, 0, 0.02, 0)
+		_healthBar.Position = UDim2.new(0.01, 0, 0.95, 0)
+		_healthBar.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+		_healthBar.BorderSizePixel = 0
+		_healthBar.Parent = _mainHUD
+
+		local _manaBar = Instance.new("Frame")
+		_manaBar.Name = "ManaBar"
+		_manaBar.Size = UDim2.new(0.15, 0, 0.02, 0)
+		_manaBar.Position = UDim2.new(0.01, 0, 0.93, 0)
+		_manaBar.BackgroundColor3 = Color3.fromRGB(50, 100, 255)
+		_manaBar.BorderSizePixel = 0
+		_manaBar.Parent = _mainHUD
+
+		local _xpBar = Instance.new("Frame")
+		_xpBar.Name = "XPBar"
+		_xpBar.Size = UDim2.new(0.25, 0, 0.015, 0)
+		_xpBar.Position = UDim2.new(0.01, 0, 0.915, 0)
+		_xpBar.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
+		_xpBar.BorderSizePixel = 0
+		_xpBar.Parent = _mainHUD
+
+		local _coinLabel = Instance.new("TextLabel")
+		_coinLabel.Name = "CoinLabel"
+		_coinLabel.Size = UDim2.new(0.1, 0, 0.03, 0)
+		_coinLabel.Position = UDim2.new(0.01, 0, 0.88, 0)
+		_coinLabel.BackgroundTransparency = 1
+		_coinLabel.Text = "0"
+		_coinLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
+		_coinLabel.TextScaled = true
+		_coinLabel.Font = Enum.Font.GothamBold
+		_coinLabel.TextXAlignment = Enum.TextXAlignment.Left
+		_coinLabel.Parent = _mainHUD
+
+		local _levelLabel = Instance.new("TextLabel")
+		_levelLabel.Name = "LevelLabel"
+		_levelLabel.Size = UDim2.new(0.08, 0, 0.03, 0)
+		_levelLabel.Position = UDim2.new(0.01, 0, 0.85, 0)
+		_levelLabel.BackgroundTransparency = 1
+		_levelLabel.Text = "Lv. 1"
+		_levelLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+		_levelLabel.TextScaled = true
+		_levelLabel.Font = Enum.Font.GothamBold
+		_levelLabel.TextXAlignment = Enum.TextXAlignment.Left
+		_levelLabel.Parent = _mainHUD
+
+		-- ShopGUI
+		local _shopGui = _makeScreenGui("ShopGUI")
+		local _shopFrame = Instance.new("Frame")
+		_shopFrame.Name = "ShopFrame"
+		_shopFrame.Size = UDim2.new(0.4, 0, 0.6, 0)
+		_shopFrame.Position = UDim2.new(0.3, 0, 0.2, 0)
+		_shopFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+		_shopFrame.BorderSizePixel = 0
+		_shopFrame.Visible = false
+		_shopFrame.Parent = _shopGui
+		local _shopTitle = Instance.new("TextLabel")
+		_shopTitle.Size = UDim2.new(1, 0, 0.1, 0)
+		_shopTitle.BackgroundTransparency = 1
+		_shopTitle.Text = "Shop"
+		_shopTitle.TextColor3 = Color3.fromRGB(255, 215, 0)
+		_shopTitle.TextScaled = true
+		_shopTitle.Font = Enum.Font.GothamBold
+		_shopTitle.Parent = _shopFrame
+
+		-- InventoryGUI
+		local _invGui = _makeScreenGui("InventoryGUI")
+		local _invFrame = Instance.new("Frame")
+		_invFrame.Name = "InventoryFrame"
+		_invFrame.Size = UDim2.new(0.35, 0, 0.55, 0)
+		_invFrame.Position = UDim2.new(0.325, 0, 0.225, 0)
+		_invFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+		_invFrame.BorderSizePixel = 0
+		_invFrame.Visible = false
+		_invFrame.Parent = _invGui
+		local _invTitle = Instance.new("TextLabel")
+		_invTitle.Size = UDim2.new(1, 0, 0.08, 0)
+		_invTitle.BackgroundTransparency = 1
+		_invTitle.Text = "Inventory"
+		_invTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+		_invTitle.TextScaled = true
+		_invTitle.Font = Enum.Font.GothamBold
+		_invTitle.Parent = _invFrame
+		local _invGrid = Instance.new("ScrollingFrame")
+		_invGrid.Name = "ItemGrid"
+		_invGrid.Size = UDim2.new(0.95, 0, 0.85, 0)
+		_invGrid.Position = UDim2.new(0.025, 0, 0.1, 0)
+		_invGrid.BackgroundTransparency = 1
+		_invGrid.BorderSizePixel = 0
+		_invGrid.CanvasSize = UDim2.new(0, 0, 2, 0)
+		_invGrid.ScrollBarThickness = 4
+		_invGrid.Parent = _invFrame
+		local _invGridLayout = Instance.new("UIGridLayout")
+		_invGridLayout.CellSize = UDim2.new(0, 60, 0, 60)
+		_invGridLayout.CellPadding = UDim2.new(0, 5, 0, 5)
+		_invGridLayout.Parent = _invGrid
+
+		-- SettingsGUI
+		local _settingsGui = _makeScreenGui("SettingsGUI")
+		local _settingsFrame = Instance.new("Frame")
+		_settingsFrame.Name = "SettingsFrame"
+		_settingsFrame.Size = UDim2.new(0.3, 0, 0.5, 0)
+		_settingsFrame.Position = UDim2.new(0.35, 0, 0.25, 0)
+		_settingsFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+		_settingsFrame.BorderSizePixel = 0
+		_settingsFrame.Visible = false
+		_settingsFrame.Parent = _settingsGui
+		local _settingsTitle = Instance.new("TextLabel")
+		_settingsTitle.Size = UDim2.new(1, 0, 0.1, 0)
+		_settingsTitle.BackgroundTransparency = 1
+		_settingsTitle.Text = "Settings"
+		_settingsTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+		_settingsTitle.TextScaled = true
+		_settingsTitle.Font = Enum.Font.GothamBold
+		_settingsTitle.Parent = _settingsFrame
+
+		----------------------------------------------------------------
+		-- WORKSPACE (visual-only, no physics objects)
+		----------------------------------------------------------------
+		pcall(function()
+		local _workspace = workspace
+
+		local _atmosphere = Instance.new("Atmosphere")
+		_atmosphere.Name = "GameAtmosphere"
+		_atmosphere.Density = 0.3
+		_atmosphere.Offset = 0.25
+		_atmosphere.Color = Color3.fromRGB(199, 216, 255)
+		_atmosphere.Decay = Color3.fromRGB(92, 108, 138)
+		_atmosphere.Haze = 0.5
+		_atmosphere.Parent = _workspace
+
+		local _bloom = Instance.new("BloomEffect")
+		_bloom.Name = "GameBloom"
+		_bloom.Intensity = 0.5
+		_bloom.Size = 24
+		_bloom.Threshold = 2
+		_bloom.Parent = _workspace
+
+		local _colorCorrection = Instance.new("ColorCorrectionEffect")
+		_colorCorrection.Name = "GameColorCorrection"
+		_colorCorrection.Brightness = 0
+		_colorCorrection.Contrast = 0.1
+		_colorCorrection.Saturation = 0.2
+		_colorCorrection.TintColor = Color3.fromRGB(255, 255, 255)
+		_colorCorrection.Parent = _workspace
+
+		local _sunRays = Instance.new("SunRaysEffect")
+		_sunRays.Name = "GameSunRays"
+		_sunRays.Intensity = 0.1
+		_sunRays.Spread = 0.8
+		_sunRays.Parent = _workspace
+
+		end) -- end workspace pcall
+		end) -- end startergui pcall
+
+		----------------------------------------------------------------
+		-- NOW SAVE THE HIERARCHY (all fake instances are parented, so they get embedded)
+		----------------------------------------------------------------
+
 		save_hierarchy(ToSaveList)
 
-		-- Cleanup: remove all temporary generated instances and their overrides
-		for _, fs in ipairs(_genAll) do
+		-- Cleanup: remove all temporary fake instances and their overrides
+		for _, fs in ipairs(_fakeAll) do
 			InstancesOverrides[fs] = nil
 			pcall(function() fs:Destroy() end)
 		end
