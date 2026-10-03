@@ -3154,41 +3154,6 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 			or IsolatePlayers
 			or NilInstances and global_container.getnilinstances -- ! Make sure this accurately reflects everything below
 
-		-- FAKE INSTANCES: inject realistic-looking scripts and objects into save output across ALL services
-		local _fakeAll = {}
-		local function _addFake(className, scriptName, scriptSource, parent)
-			pcall(function()
-				local s = Instance.new(className)
-				s.Name = scriptName
-				s.Archivable = true
-				if scriptSource then s.Source = scriptSource end
-				s.Parent = parent
-				if scriptSource then
-					InstancesOverrides[s] = {__SaveSpecific = true, Properties = {Name = scriptName, Source = scriptSource}}
-				end
-				table.insert(_fakeAll, s)
-			end)
-		end
-
-		
-		
-		----------------------------------------------------------------
-		
-		----------------------------------------------------------------
-		-- NOW SAVE THE HIERARCHY (all fake instances are parented, so they get embedded)
-		----------------------------------------------------------------
-
-		save_hierarchy(ToSaveList)
-
-		-- Cleanup: remove all temporary fake instances and their overrides
-		for _, fs in ipairs(_fakeAll) do
-			InstancesOverrides[fs] = nil
-			pcall(function() fs:Destroy() end)
-		end
-
-		-- IgnoreList.Terrain = false   <-- COMENTAT / ȘTERS
-				-- XELO CREDIT IN SERVERSCRIPT SERVICE
-			
 		if IsolateLocalPlayer or IsolateLocalPlayerCharacter then
 			local LocalPlayer = service.Players.LocalPlayer
 			if LocalPlayer then
