@@ -1894,13 +1894,7 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 		end
 	end
 
-	local currentstr, currentsize, totalsize, chunks = "", 0, 0, table.create(1)
-	local savebuffer, savebuffer_size = {}, 1
-	local header =
-	'<!-- Saved by XELO STEALER v6.2 | Made by Xelo -->\n' ..
-	'<!-- Discord: ' .. (DiscordLink or "https://discord.gg/hermeznxelo") .. ' -->\n' ..
-	'<roblox version="4">'
-	local StatusText
+	
 
 	local OPTIONS = {
 		mode = "optimized",
