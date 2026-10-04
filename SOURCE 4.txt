@@ -2971,7 +2971,15 @@ local function synsaveinstance(CustomOptions, CustomOptions2)
 								tag = ValueType
 
 								if PropertyName == "Source" then
-									if DecompileIgnoring then -- ? Should this really prevent extraction of the original source if present ?
+									local preserveXeloAISource = false
+									pcall(function()
+										preserveXeloAISource = instance:GetAttribute("XELO_AI_GENERATED") == true
+									end)
+
+									if preserveXeloAISource then
+										local sourceOk, sourceValue = pcall(function() return instance.Source end)
+										value = sourceOk and sourceValue or ""
+									elseif DecompileIgnoring then -- ? Should this really prevent extraction of the original source if present ?
 										if DecompileIgnoring == 1 then
 											DecompileIgnoring = nil
 										end
