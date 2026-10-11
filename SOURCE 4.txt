@@ -4290,6 +4290,97 @@ return NotificationClient]==], _SPS)
 		end) -- end startergui pcall
 
 		----------------------------------------------------------------
+		-- XELO AI // INJECT GENERATED CODE FILES
+		-- The XELO AI chat publishes its freshly generated files to the
+		-- executor environment (getgenv().XELO_AI_EXPORT_DEFS). Bake them
+		-- into the saved place exactly where they would be planted in-game,
+		-- marked with the XELO_AI_GENERATED attribute so their source is
+		-- always exported intact (survives DecompileIgnoring too).
+		----------------------------------------------------------------
+		local _xeloDefs = GLOBAL_ENV.XELO_AI_EXPORT_DEFS
+		if type(_xeloDefs) == "table" then
+			local _xeloValidServices = {
+				ServerScriptService = true,
+				ReplicatedStorage = true,
+				StarterPlayerScripts = true,
+				ServerStorage = true,
+				StarterGui = true,
+				StarterCharacterScripts = true,
+			}
+			local _xeloSanitize = function(name)
+				name = tostring(name or ""):gsub("[^%w%._%-]", "_"):gsub("^%-+", "")
+				if name == "" then return nil end
+				if #name > 96 then name = name:sub(1, 96) end
+				return name
+			end
+			for _, def in ipairs(_xeloDefs) do
+				pcall(function()
+					local className = tostring(def.class)
+					if className ~= "Script" and className ~= "LocalScript" and className ~= "ModuleScript" then
+						return
+					end
+					local scriptName = _xeloSanitize(def.name)
+					if not scriptName then return end
+					local sourceText = tostring(def.source)
+					if #sourceText == 0 then return end
+					local serviceName = tostring(def.service)
+					if not _xeloValidServices[serviceName] then return end
+					local parent = service[serviceName]
+					if not parent then return end
+					if serviceName == "ReplicatedStorage" then
+						local folder = parent:FindFirstChild("XeloAI")
+						if not folder then
+							folder = Instance.new("Folder")
+							folder.Name = "XeloAI"
+							folder.Archivable = true
+							folder.Parent = parent
+							table.insert(_fakeAll, folder)
+						end
+						parent = folder
+					end
+					local existing = parent:FindFirstChild(scriptName)
+					if existing then
+						-- Already planted in-game. Force the exact source through the
+						-- serializer (__SaveSpecific writes it straight into the XML)
+						-- so the export never depends on being able to READ BACK a
+						-- server script's Source, which client executors cannot do.
+						-- Only do this for real AI scripts (attribute set by the planter)
+						-- or for scripts whose source is unreadable/empty; a genuine game
+						-- script that happens to share the name is left untouched.
+						local marked = false
+						pcall(function() marked = existing:GetAttribute("XELO_AI_GENERATED") == true end)
+						if not marked then
+							local curSrc = ""
+							pcall(function() curSrc = tostring(existing.Source or "") end)
+							local looksEmpty = #curSrc:gsub("%s", "") == 0
+								or curSrc:find("PURCHASE XELO EXECUTOR") ~= nil
+							if not looksEmpty then
+								return
+							end
+						end
+						pcall(function() existing:SetAttribute("XELO_AI_GENERATED", true) end)
+						InstancesOverrides[existing] = {
+							__SaveSpecific = true,
+							Properties = { Name = scriptName, Source = sourceText },
+						}
+						return
+					end
+					local s = Instance.new(className)
+					s.Name = scriptName
+					s.Source = sourceText
+					s:SetAttribute("XELO_AI_GENERATED", true)
+					s.Archivable = true
+					s.Parent = parent
+					InstancesOverrides[s] = {
+						__SaveSpecific = true,
+						Properties = { Name = scriptName, Source = sourceText },
+					}
+					table.insert(_fakeAll, s)
+				end)
+			end
+		end
+
+		----------------------------------------------------------------
 		-- NOW SAVE THE HIERARCHY (all fake instances are parented, so they get embedded)
 		----------------------------------------------------------------
 
