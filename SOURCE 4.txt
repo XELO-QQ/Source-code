@@ -234,10 +234,22 @@ do
 	local filename = "UniversalMethodFinder"
 
 	local finder
-	finder, global_container = loadstring(
-		game:HttpGet("https://raw.githubusercontent.com/luau/SomeHub/main/" .. filename .. ".luau", true),
-		filename
-	)()
+	local finderUrl = "https://raw.githubusercontent.com/luau/SomeHub/main/" .. filename .. ".luau"
+	local httpOk, finderSource = pcall(function()
+		return game:HttpGet(finderUrl, true)
+	end)
+	assert(httpOk and type(finderSource) == "string" and #finderSource > 0,
+		"XELO save engine: failed to download UniversalMethodFinder: " .. tostring(finderSource))
+	local compileOk, finderChunk = pcall(loadstring, finderSource, filename)
+	assert(compileOk and type(finderChunk) == "function",
+		"XELO save engine: UniversalMethodFinder compile failed: " .. tostring(finderChunk))
+	local runOk, finderResult = pcall(finderChunk)
+	assert(runOk and type(finderResult) == "function",
+		"XELO save engine: UniversalMethodFinder returned no finder function: " .. tostring(finderResult))
+	finder, global_container = finderResult()
+
+	assert(type(finder) == "function" and type(global_container) == "table",
+		"XELO save engine: UniversalMethodFinder initialization failed")
 
 	finder({
 		-- readbinarystring = 'string.find(...,"bin",nil,true)', -- ! Could match some unwanted stuff (getbinaryindex)
